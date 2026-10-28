@@ -3,9 +3,16 @@ const $ = id => document.getElementById(id);
 // Curated versioned reference data; no unauthorised scraping or claimed live updates.
 const CATALOG_CHECKED='2026-10-28';
 const CURATED_CATALOG=[
- {name:'マイジャグラーV',aliases:['マイジャグラーⅤ','SマイジャグラーVKD','SマイジャグラーⅤKD','ﾏｲｼﾞｬｸﾞﾗｰV','ﾏｲｼﾞｬｸﾞﾗｰⅤ'],url:'https://pachinavi.net/machines/my-juggler-v/settei/',bb:[273.1,270.8,266.4,254.0,240.1,229.1],rb:[409.6,385.5,336.1,290.0,268.6,229.1],payout:[97,98,99.9,102.8,105.3,109.4]},
- {name:'アイムジャグラーEX',aliases:['SアイムジャグラーEX','アイムジャグラーＥＸ','SアイムジャグラーEX-TP','SアイムジャグラーEXTP'],url:'https://pachinavi.net/machines/im-juggler-ex/settei/',bb:[273.1,269.7,269.7,259,259,255],rb:[439.8,399.6,331,315.1,255,255],payout:[97,98,99.5,101.1,103.3,105.5]},
- {name:'ゴーゴージャグラー3',aliases:['ゴーゴージャグラーⅢ','Sゴーゴージャグラー3','ゴージャグ3'],url:'https://www.p-world.co.jp/machine/database/9848',bb:[259,258,257,254,247.3,234.9],rb:[354.2,332.7,306.2,268.6,247.3,234.9],payout:[97.2,98.2,99.4,101.6,103.8,106.5]}
+ {"name":"マイジャグラーV","aliases":["マイジャグラー5","マイジャグラーⅤ","SマイジャグラーVKD","SマイジャグラーⅤKD","マイジャグ5"],"url":"https://www.kitadenshi.co.jp/fun/","sourceType":"official","bb":[273.1,270.8,266.4,254,240.1,229.1],"rb":[409.6,385.5,336.1,290,268.6,229.1],"payout":[97,98,99.9,102.8,105.3,109.4]},
+ {"name":"マイジャグラーVI","aliases":["マイジャグラー6","マイジャグラーⅥ","マイジャグVI","マイジャグ6"],"url":"https://www.kitadenshi.co.jp/fun/","sourceType":"official","bb":[273.1,270.8,266.4,254,240.1,229.1],"rb":[409.6,385.5,336.1,290,268.6,229.1],"payout":[97,98,99.9,102.8,105.3,109.4]},
+ {"name":"アイムジャグラーEX","aliases":["SアイムジャグラーEX","アイムジャグラーＥＸ","SアイムジャグラーEX-TP","SアイムジャグラーEXTP","アイムEX"],"url":"https://pachislot-memo.online/juggler-all","sourceType":"secondary","bb":[273.1,269.7,269.7,259,259,255],"rb":[439.8,399.6,331,315.1,255,255],"payout":[97,98,99.5,101.1,103.3,105.5]},
+ {"name":"ネオアイムジャグラーEX","aliases":["ネオアイムジャグラー","ネオアイム","ネオアイムEX"],"url":"https://tsumoreru.com/machines/juggler_neo_im_ex/","sourceType":"secondary","bb":[273.1,269.7,269.7,259,259,255],"rb":[439.8,399.6,331,315.1,255,255],"payout":[97,98,99.5,101.1,103.3,105.5]},
+ {"name":"ゴーゴージャグラー3","aliases":["ゴーゴージャグラーⅢ","Sゴーゴージャグラー3","ゴージャグ3"],"url":"https://pachislot-memo.online/juggler-all","sourceType":"secondary","bb":[259,258,257,254,247.3,234.9],"rb":[354.2,332.7,306.2,268.6,247.3,234.9],"payout":[97.2,98.2,99.4,101.6,103.8,106.5]},
+ {"name":"ファンキージャグラー2","aliases":["ファンキージャグラーⅡ","ファンキー2","ファンキー"],"url":"https://pachislot-memo.online/juggler-all","sourceType":"secondary","bb":[266.4,259,256,249.2,240.1,219.9],"rb":[439.8,407.1,366.1,322.8,299.3,262.1]},
+ {"name":"ハッピージャグラーVⅢ","aliases":["ハッピージャグラーVIII","ハッピージャグラーV3","ハッピージャグラー3","ハッピー3"],"url":"https://pachislot-memo.online/juggler-all","sourceType":"secondary","bb":[273.1,270.8,263.2,254,239.2,226],"rb":[397.2,362.1,332.7,300.6,273.1,256]},
+ {"name":"ジャグラーガールズSS","aliases":["ジャグラーガールズ","ガールズSS","ジャグラーガールズＳＳ"],"url":"https://pachislot-memo.online/juggler-all","sourceType":"secondary","bb":[273.1,270.8,260.1,250.1,243.6,226],"rb":[381,350.5,316.6,281.3,270.8,252.1]},
+ {"name":"ウルトラミラクルジャグラー","aliases":["ウルトラミラクル","ミラクルジャグラー","ウルミラ"],"url":"https://pachislot-memo.online/juggler-all","sourceType":"secondary","bb":[267.5,261.1,256,242.7,233.2,216.3],"rb":[425.6,402.1,350.5,322.8,297.9,277.7]},
+ {"name":"ミスタージャグラー","aliases":["ミスター","ミスタージャグ"],"url":"https://pachislot-memo.online/juggler-all","sourceType":"secondary","bb":[268.6,267.5,260.1,249.2,240.9,237.4],"rb":[374.5,354.2,331,291.3,257,237.4]},
 ];
 const normalizeMachine=s=>String(s||'').normalize('NFKC').toLowerCase().replace(/[\s　・_\-]/g,'').replace(/^(s|l)(?=[ァ-ヶ])/,'');
 function catalogFor(s){const key=normalizeMachine(s);return CURATED_CATALOG.find(m=>[m.name,...m.aliases].some(a=>normalizeMachine(a)===key))||null;}
@@ -15,7 +22,7 @@ async function seedKnownModels(){
  if(!user)return;
  const missing=CURATED_CATALOG.filter(c=>!models.some(m=>normalizeMachine(m.name)===normalizeMachine(c.name)));
  if(!missing.length)return;
- const payload=missing.map(c=>({user_id:user.id,name:c.name,source_type:'estimated',source_url:c.url,checked_on:CATALOG_CHECKED,settings:c.bb.map((bb,i)=>({setting:i+1,bb,rb:c.rb[i],payout:c.payout[i]}))}));
+ const payload=missing.map(c=>({user_id:user.id,name:c.name,source_type:'estimated',source_url:c.url,checked_on:CATALOG_CHECKED,settings:c.bb.map((bb,i)=>({setting:i+1,bb,rb:c.rb[i],payout:c.payout?.[i]??null}))}));
  const {error}=await db.from('machine_models').upsert(payload,{onConflict:'user_id,name',ignoreDuplicates:true});
  if(error)console.warn('カタログ登録保留:',error.message);
 }
