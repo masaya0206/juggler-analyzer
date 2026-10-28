@@ -80,12 +80,41 @@ function render(){text($('userLabel'),user?.email||'');text($('metricRecords'),r
  $('modelList').innerHTML='<h3>保存済みモデル</h3>'+(models.length?models.map(m=>`<div class="model-entry"><b>${esc(m.name)}</b><div class="hint">${esc(({official:'公式公表値',estimated:'推定・解析値',manual:'個人入力'})[m.source_type]||m.source_type)} · 確認日 ${esc(m.checked_on||'未設定')}</div>${m.source_url?`<a href="${esc(m.source_url)}" target="_blank" rel="noopener noreferrer">出典リンク</a>`:''}</div>`).join(''):'未登録');
 }
 function renderComparison(){
- const body=$('compareRows');if(!body)return;body.replaceChildren();const key=$('comparisonSort')?.value||'diff_medals';
- const arr=[...records].sort((x,y)=>{if(key==='diff_medals'){if(x.diff_medals==null&&y.diff_medals==null)return 0;if(x.diff_medals==null)return 1;if(y.diff_medals==null)return -1;return y.diff_medals-x.diff_medals;}return (y.games||0)-(x.games||0);});
- for(const r of arr.slice(0,300)){const tr=document.createElement('tr');for(const v of [r.business_date,r.machine_name,r.machine_number,r.games,r.bb,r.rb,signed(r.diff_medals),displayOptional(r.max_hold),displayOptional(r.start_games),displayOptional(r.play_status)]){const td=document.createElement('td');td.textContent=v;tr.appendChild(td);}body.appendChild(tr);}
- if(!arr.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=10;td.textContent='データはまだありません';tr.append(td);body.append(tr);}
+ const body=$('compareRows');if(!body)return;body.replaceChildren();
+ const date=$('comparisonDate')?.value||'',machine=$('comparisonMachine')?.value||'';
+ const key=$('comparisonSort')?.value||'diff_medals';
+ const availableDate=[...new Set(records.map(r=>r.business_date))].sort().reverse();
+ const availableMachine=[...new Set(records.map(r=>r.machine_name))].sort();
+ for(const [id,values,current] of [['comparisonDate',availableDate,date],['comparisonMachine',availableMachine,machine]]){
+  const select=$(id);const first=select.options[0].cloneNode(true);select.replaceChildren(first);
+  for(const value of values){const option=document.createElement('option');option.value=value;option.textContent=value;select.append(option);}
+  select.value=values.includes(current)?current:'';
+ }
+ const evaluated=records.filter(r=>(!date||r.business_date===date)&&(!machine||r.machine_name===machine)).map(r=>{
+  const m=models.find(m=>m.name===r.machine_name);let high=null;
+  if(m){try{high=infer(r,m).filter(p=>Number(p.setting)>=4).reduce((sum,p)=>sum+p.prob,0);}catch(_){}}
+  return {r,high};
+ });
+ evaluated.sort((a,b)=>{
+  if(key==='high_prob')return (b.high??-1)-(a.high??-1);
+  if(key==='games')return (b.r.games||0)-(a.r.games||0);
+  return (b.r.diff_medals??-Infinity)-(a.r.diff_medals??-Infinity);
+ });
+ for(const {r,high} of evaluated.slice(0,500)){
+  const tr=document.createElement('tr');
+  for(const v of [r.business_date,r.machine_name,r.machine_number,r.games,r.bb,r.rb,signed(r.diff_medals),displayOptional(r.max_hold),displayOptional(r.start_games),displayOptional(r.play_status),high===null?'モデル未登録 / 判定不可':(high*100).toFixed(1)+'%']){
+   const td=document.createElement('td');td.textContent=v;tr.append(td);
+  }
+  const td=document.createElement('td'),button=document.createElement('button');button.className='secondary';button.textContent='分析';
+  button.disabled=high===null;button.onclick=()=>{tab('analyze');$('analysisRecord').value=r.id;$('analysisModel').value=models.find(m=>m.name===r.machine_name)?.id||'';$('runAnalysis').click();};
+  td.append(button);tr.append(td);body.append(tr);
+ }
+ if(!evaluated.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=12;td.textContent='該当するデータはありません';tr.append(td);body.append(tr);}
 }
 $('comparisonSort').onchange=renderComparison;
+$('comparisonDate').onchange=renderComparison;
+$('comparisonMachine').onchange=renderComparison;
+for(const id of ['store','machine','businessDate']) $(id).addEventListener('input',()=>{pending=[];$('saveRows').disabled=true;});
 async function reload(){if(!user)return;const [a,b]=await Promise.all([db.from('machine_records').select('*').order('business_date',{ascending:false}).limit(1000),db.from('machine_models').select('*').order('name')]);if(a.error||b.error){alert('データ取得失敗: '+(a.error?.message||b.error?.message));return;}records=a.data||[];models=b.data||[];render();}
 async function publicState(){const {data,error}=await db.rpc('app_public_state');if(error)throw Error('認証用SQLが未適用です: '+error.message);initialized=Boolean(data?.initialized);}
 function registerView(){const query=new URLSearchParams(location.search),invite=query.get('invite');$('setupCodeField').classList.toggle('hidden',!!invite||initialized);$('setupCode').required=!invite&&!initialized;$('registerTitle').textContent=invite?'招待アカウント登録':initialized?'招待が必要です':'最高管理者の初回登録';$('registerHelp').textContent=invite?'招待されたメールアドレスを入力してください。':initialized?'管理者が発行した招待URLから登録してください。':'SQL設定時に指定した初回セットアップコードを入力してください。';$('registerForm').classList.toggle('hidden',initialized&&!invite);show('register');}
@@ -120,7 +149,7 @@ function applyShortcutMetadata(raw){
   if(isShortcut && (!store||!machine||!date))msg('importMessage','取得データに店舗・機種・営業日の一部がありません。ショートカットを更新してください。',true);
   return Boolean($('store').value.trim() && $('machine').value.trim() && $('businessDate').value);
 }
-$('rawData').addEventListener('input',()=>{applyShortcutMetadata($('rawData').value);});
+$('rawData').addEventListener('input',()=>{pending=[];$('saveRows').disabled=true;applyShortcutMetadata($('rawData').value);});
 $('pasteClipboard').onclick=async()=>{
  try{const raw=await navigator.clipboard.readText();if(!raw.trim())throw Error('クリップボードが空です');
  if(raw.length>1000000)throw Error('読み込むデータが大きすぎます');
@@ -130,7 +159,29 @@ $('pasteClipboard').onclick=async()=>{
 $('openTeramoba').onclick=()=>window.open('https://nobuta.pt.teramoba2.com/lightshinshigai/rack_info','_blank','noopener,noreferrer');
 $('importFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>1024*1024){msg('importMessage','ファイルは1MB以下にしてください',true);return;}$('rawData').value=await f.text();applyShortcutMetadata($('rawData').value);};
 $('preview').onclick=()=>{pending=[];$('saveRows').disabled=true;applyShortcutMetadata($('rawData').value);const store=$('store').value.trim(),machine=$('machine').value.trim(),date=$('businessDate').value;if(!store||!machine||!date){msg('importMessage','店舗・機種・営業日を入力してください',true);return;}try{pending=parseInput($('rawData').value);if(!pending.length)throw Error('台データがありません');const seen=new Set();for(const r of pending){if(seen.has(r.machine_number)){r.valid=false;r.issue='同じ台番号が複数あります';}seen.add(r.machine_number);}const tbody=$('previewRows');tbody.replaceChildren();for(const r of pending){const tr=document.createElement('tr');for(const value of [r.machine_number,r.games,r.bb,r.rb,signed(r.diff_medals),displayOptional(r.max_hold),displayOptional(r.start_games),displayOptional(r.play_status),r.issue]){const td=document.createElement('td');td.textContent=String(value);tr.append(td);}tbody.appendChild(tr);}$('saveRows').disabled=pending.some(r=>!r.valid);msg('importMessage',`${pending.length}件読み取りました。${pending.filter(r=>!r.valid).length}件に確認が必要です。`,pending.some(r=>!r.valid));}catch(e){msg('importMessage',e.message,true);}};
-$('saveRows').onclick=async()=>{if(!pending.length||pending.some(r=>!r.valid)||!user)return;const rows=pending.map(r=>({user_id:user.id,business_date:$('businessDate').value,store_name:$('store').value.trim(),machine_name:$('machine').value.trim(),machine_number:r.machine_number,games:r.games,bb:r.bb,rb:r.rb,diff_medals:r.diff_medals,max_hold:r.max_hold,start_games:r.start_games,play_status:r.play_status}));$('saveRows').disabled=true;msg('importMessage','保存中…');const {error}=await db.from('machine_records').upsert(rows,{onConflict:'user_id,business_date,store_name,machine_name,machine_number'});if(error){msg('importMessage',error.message,true);$('saveRows').disabled=false;return;}msg('importMessage',`${rows.length}件保存しました。同じ日付・店舗・機種・台番号は上書きされます。`);pending=[];await reload();};
+$('saveRows').onclick=async()=>{
+ if(!pending.length||pending.some(r=>!r.valid)||!user)return;
+ const store=$('store').value.trim(),machine=$('machine').value.trim(),date=$('businessDate').value;
+ if(!store||!machine||!/^\d{4}-\d{2}-\d{2}$/.test(date)){msg('importMessage','店舗・機種・営業日を確認してください',true);return;}
+ const rows=pending.map(r=>({user_id:user.id,business_date:date,store_name:store,machine_name:machine,machine_number:r.machine_number,games:r.games,bb:r.bb,rb:r.rb,diff_medals:r.diff_medals,max_hold:r.max_hold,start_games:r.start_games,play_status:r.play_status}));
+ $('saveRows').disabled=true;msg('importMessage',`${rows.length}件を保存しています…`);
+ try{
+  // Upsert is idempotent for the same user/date/store/machine/number.
+  // Write in small batches to avoid large payloads, while reporting partial failure explicitly.
+  let saved=0;
+  for(let i=0;i<rows.length;i+=100){
+   const {error}=await db.from('machine_records').upsert(rows.slice(i,i+100),{onConflict:'user_id,business_date,store_name,machine_name,machine_number'});
+   if(error)throw Error(`${saved}件保存後、続きの登録に失敗: ${error.message}`);
+   saved+=Math.min(100,rows.length-i);
+  }
+  const {count,error:checkError}=await db.from('machine_records').select('id',{count:'exact',head:true}).eq('business_date',date).eq('store_name',store).eq('machine_name',machine);
+  if(checkError)throw Error('保存要求は完了しましたが件数確認に失敗: '+checkError.message);
+  msg('importMessage',`${saved}件の保存要求が成功しました。${date}・${store}・${machine}の登録件数は${count}件です。既存の同一台番号は更新されます。`);
+  pending=[];
+  await reload();
+ }catch(e){msg('importMessage',e.message+'。登録済みの台がある可能性があります。同じデータで再試行できます。',true);}
+ finally{$('saveRows').disabled=pending.length===0||pending.some(r=>!r.valid);}
+};
 $('saveModel').onclick=async()=>{const name=$('modelName').value.trim();const settings=[];for(let i=1;i<=6;i++)settings.push({setting:i,bb:Number($('bb'+i).value),rb:Number($('rb'+i).value)});if(!name||settings.some(s=>!Number.isFinite(s.bb)||!Number.isFinite(s.rb)||s.bb<=1||s.rb<=1)){msg('modelMessage','名前と設定1〜6のBB・RB分母（1より大きい数）をすべて入力してください',true);return;}const source_url=$('modelSource').value.trim()||null;if($('modelType').value!=='manual'&&!source_url){msg('modelMessage','公式値・解析値を登録するときは出典URLが必要です',true);return;}const {error}=await db.from('machine_models').upsert({user_id:user.id,name,source_type:$('modelType').value,source_url,checked_on:$('modelChecked').value||null,settings},{onConflict:'user_id,name'});if(error)msg('modelMessage',error.message,true);else{msg('modelMessage','モデルを保存しました');await reload();}};
 // Independent binomial terms: BB occurs with pBB per game and RB with pRB per game.
 // Treat categories as mutually exclusive, using multinomial likelihood (constant omitted).
