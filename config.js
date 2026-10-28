@@ -1,7 +1,6 @@
-// Supabase Dashboard > Project Settings > API から確認してください。
-// URL と Publishable key (または legacy anon key) だけを記入。
-// service_role / secret key をブラウザへ絶対に置かないでください。
+// Juggler Analyzer - Supabase public client configuration.
+// This file is served publicly by GitHub Pages. Never put secret/service_role keys here.
 window.APP_CONFIG = {
-  supabaseUrl: '',
-  supabasePublishableKey: ''
+  supabaseUrl: 'https://lfopwiwohtwedklfwnpn.supabase.co',
+  supabasePublishableKey: 'sb_publishable_2EyHtP0sptDb2M5p0CBVJA__Olo4L0T'
 };
