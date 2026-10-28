@@ -1,5 +1,26 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 const $ = id => document.getElementById(id);
+// Curated versioned reference data; no unauthorised scraping or claimed live updates.
+const CATALOG_CHECKED='2026-10-28';
+const CURATED_CATALOG=[
+ {name:'マイジャグラーV',aliases:['マイジャグラーⅤ','SマイジャグラーVKD','SマイジャグラーⅤKD','ﾏｲｼﾞｬｸﾞﾗｰV','ﾏｲｼﾞｬｸﾞﾗｰⅤ'],url:'https://pachinavi.net/machines/my-juggler-v/settei/',bb:[273.1,270.8,266.4,254.0,240.1,229.1],rb:[409.6,385.5,336.1,290.0,268.6,229.1],payout:[97,98,99.9,102.8,105.3,109.4]},
+ {name:'アイムジャグラーEX',aliases:['SアイムジャグラーEX','アイムジャグラーＥＸ','SアイムジャグラーEX-TP','SアイムジャグラーEXTP'],url:'https://pachinavi.net/machines/im-juggler-ex/settei/',bb:[273.1,269.7,269.7,259,259,255],rb:[439.8,399.6,331,315.1,255,255],payout:[97,98,99.5,101.1,103.3,105.5]},
+ {name:'ゴーゴージャグラー3',aliases:['ゴーゴージャグラーⅢ','Sゴーゴージャグラー3','ゴージャグ3'],url:'https://www.p-world.co.jp/machine/database/9848',bb:[259,258,257,254,247.3,234.9],rb:[354.2,332.7,306.2,268.6,247.3,234.9],payout:[97.2,98.2,99.4,101.6,103.8,106.5]}
+];
+const normalizeMachine=s=>String(s||'').normalize('NFKC').toLowerCase().replace(/[\s　・_\-]/g,'').replace(/^(s|l)(?=[ァ-ヶ])/,'');
+function catalogFor(s){const key=normalizeMachine(s);return CURATED_CATALOG.find(m=>[m.name,...m.aliases].some(a=>normalizeMachine(a)===key))||null;}
+function modelFor(s){const entry=catalogFor(s);return models.find(m=>normalizeMachine(m.name)===normalizeMachine(entry?.name||s)||normalizeMachine(m.name)===normalizeMachine(s))||null;}
+function effectiveMachineName(s){return catalogFor(s)?.name||s;}
+async function seedKnownModels(){
+ if(!user)return;
+ const missing=CURATED_CATALOG.filter(c=>!models.some(m=>normalizeMachine(m.name)===normalizeMachine(c.name)));
+ if(!missing.length)return;
+ const payload=missing.map(c=>({user_id:user.id,name:c.name,source_type:'estimated',source_url:c.url,checked_on:CATALOG_CHECKED,settings:c.bb.map((bb,i)=>({setting:i+1,bb,rb:c.rb[i],payout:c.payout[i]}))}));
+ const {error}=await db.from('machine_models').upsert(payload,{onConflict:'user_id,name',ignoreDuplicates:true});
+ if(error)console.warn('カタログ登録保留:',error.message);
+}
+function inferenceMetrics(r){const m=modelFor(r.machine_name);if(!m)return {model:null,high:null,expected:null,likely:null};try{const ps=infer(r,m);return {model:m,high:ps.filter(p=>Number(p.setting)>=4).reduce((v,p)=>v+p.prob,0),expected:ps.reduce((v,p)=>v+Number(p.setting)*p.prob,0),likely:ps.reduce((a,b)=>a.prob>=b.prob?a:b).setting};}catch{return {model:m,high:null,expected:null,likely:null};}}
+
 const config=window.APP_CONFIG||{};
 let db=null, user=null, records=[], models=[], pending=[], membership=null, initialized=false;
 // Safari share handoff. Payload stays in the URL fragment (never in HTTP requests).
@@ -72,7 +93,7 @@ const tab=name=>{document.querySelectorAll('[data-tab]').forEach(b=>b.classList.
 const today=new Date();$('businessDate').value=[today.getFullYear(),String(today.getMonth()+1).padStart(2,'0'),String(today.getDate()).padStart(2,'0')].join('-');$('modelChecked').value=$('businessDate').value;
 for(let i=1;i<=6;i++){$('modelInputs').insertAdjacentHTML('beforeend',`<tr><th>${i}</th><td><input type="number" inputmode="decimal" min="1" step="any" id="bb${i}" placeholder="273.1" aria-label="設定${i}のBB分母"></td><td><input type="number" inputmode="decimal" min="1" step="any" id="rb${i}" placeholder="409.6" aria-label="設定${i}のRB分母"></td></tr>`);}
 function render(){text($('userLabel'),user?.email||'');text($('metricRecords'),records.length);text($('metricModels'),models.length);
- const recent=$('recentRows');recent.replaceChildren();for(const r of records.slice(0,100)){const tr=document.createElement('tr');for(const v of [r.business_date,r.store_name,r.machine_name,r.machine_number,r.games,r.bb,r.rb,signed(r.diff_medals)]){const td=document.createElement('td');td.textContent=v;tr.appendChild(td);}const td=document.createElement('td'),b=document.createElement('button');b.className='secondary';b.textContent='表示';b.onclick=()=>{tab('analyze');$('analysisRecord').value=r.id;$('analysisModel').value=models.find(m=>m.name===r.machine_name)?.id||'';};td.appendChild(b);tr.appendChild(td);recent.appendChild(tr);}
+ const recent=$('recentRows');recent.replaceChildren();for(const r of records.slice(0,100)){const tr=document.createElement('tr');for(const v of [r.business_date,r.store_name,r.machine_name,r.machine_number,r.games,r.bb,r.rb,signed(r.diff_medals)]){const td=document.createElement('td');td.textContent=v;tr.appendChild(td);}const td=document.createElement('td'),b=document.createElement('button');b.className='secondary';b.textContent='表示';b.onclick=()=>{tab('analyze');$('analysisRecord').value=r.id;$('analysisModel').value=modelFor(r.machine_name)?.id||'';};td.appendChild(b);tr.appendChild(td);recent.appendChild(tr);}
  if(!records.length)recent.innerHTML='<tr><td colspan="9">データはまだありません</td></tr>';
  $('analysisRecord').innerHTML='<option value="">台データを選択</option>'+records.map(r=>`<option value="${esc(r.id)}">${esc(r.business_date+' '+r.machine_name+' '+r.machine_number+'番台 ('+r.games+'G)')}</option>`).join('');
  renderComparison();
@@ -81,8 +102,8 @@ function render(){text($('userLabel'),user?.email||'');text($('metricRecords'),r
 }
 function renderComparison(){
  const body=$('compareRows');if(!body)return;body.replaceChildren();
- const date=$('comparisonDate')?.value||'',machine=$('comparisonMachine')?.value||'';
- const key=$('comparisonSort')?.value||'diff_medals';
+ const date=$('comparisonDate')?.value||[...new Set(records.map(r=>r.business_date))].sort().reverse()[0]||'',machine=$('comparisonMachine')?.value||'';
+ const key=$('comparisonSort')?.value||'expected_setting';
  const availableDate=[...new Set(records.map(r=>r.business_date))].sort().reverse();
  const availableMachine=[...new Set(records.map(r=>r.machine_name))].sort();
  for(const [id,values,current] of [['comparisonDate',availableDate,date],['comparisonMachine',availableMachine,machine]]){
@@ -91,25 +112,25 @@ function renderComparison(){
   select.value=values.includes(current)?current:'';
  }
  const evaluated=records.filter(r=>(!date||r.business_date===date)&&(!machine||r.machine_name===machine)).map(r=>{
-  const m=models.find(m=>m.name===r.machine_name);let high=null;
-  if(m){try{high=infer(r,m).filter(p=>Number(p.setting)>=4).reduce((sum,p)=>sum+p.prob,0);}catch(_){}}
-  return {r,high};
+  const metrics=inferenceMetrics(r);return {r,...metrics};
  });
  evaluated.sort((a,b)=>{
+  if(key==='number')return Number(a.r.machine_number)-Number(b.r.machine_number)||String(a.r.machine_number).localeCompare(String(b.r.machine_number),'ja',{numeric:true});
+  if(key==='expected_setting')return (b.expected??-1)-(a.expected??-1)||Number(a.r.machine_number)-Number(b.r.machine_number);
   if(key==='high_prob')return (b.high??-1)-(a.high??-1);
   if(key==='games')return (b.r.games||0)-(a.r.games||0);
   return (b.r.diff_medals??-Infinity)-(a.r.diff_medals??-Infinity);
  });
- for(const {r,high} of evaluated.slice(0,500)){
+ for(const {r,high,expected,likely} of evaluated.slice(0,500)){
   const tr=document.createElement('tr');
-  for(const v of [r.business_date,r.machine_name,r.machine_number,r.games,r.bb,r.rb,signed(r.diff_medals),displayOptional(r.max_hold),displayOptional(r.start_games),displayOptional(r.play_status),high===null?'モデル未登録 / 判定不可':(high*100).toFixed(1)+'%']){
+  for(const v of [r.business_date,r.machine_name,r.machine_number,r.games,r.bb,r.rb,signed(r.diff_medals),displayOptional(r.max_hold),displayOptional(r.start_games),displayOptional(r.play_status),expected===null?'未推定':expected.toFixed(2),likely===null?'未推定':'設定'+likely,high===null?'モデル未登録 / 判定不可':(high*100).toFixed(1)+'%']){
    const td=document.createElement('td');td.textContent=v;tr.append(td);
   }
   const td=document.createElement('td'),button=document.createElement('button');button.className='secondary';button.textContent='分析';
-  button.disabled=high===null;button.onclick=()=>{tab('analyze');$('analysisRecord').value=r.id;$('analysisModel').value=models.find(m=>m.name===r.machine_name)?.id||'';$('runAnalysis').click();};
+  button.disabled=high===null;button.onclick=()=>{tab('analyze');$('analysisRecord').value=r.id;$('analysisModel').value=modelFor(r.machine_name)?.id||'';$('runAnalysis').click();};
   td.append(button);tr.append(td);body.append(tr);
  }
- if(!evaluated.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=12;td.textContent='該当するデータはありません';tr.append(td);body.append(tr);}
+ if(!evaluated.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=14;td.textContent='該当するデータはありません';tr.append(td);body.append(tr);}
 }
 $('comparisonSort').onchange=renderComparison;
 $('comparisonDate').onchange=renderComparison;
@@ -119,7 +140,7 @@ async function reload(){if(!user)return;const [a,b]=await Promise.all([db.from('
 async function publicState(){const {data,error}=await db.rpc('app_public_state');if(error)throw Error('認証用SQLが未適用です: '+error.message);initialized=Boolean(data?.initialized);}
 function registerView(){const query=new URLSearchParams(location.search),invite=query.get('invite');$('setupCodeField').classList.toggle('hidden',!!invite||initialized);$('setupCode').required=!invite&&!initialized;$('registerTitle').textContent=invite?'招待アカウント登録':initialized?'招待が必要です':'最高管理者の初回登録';$('registerHelp').textContent=invite?'招待されたメールアドレスを入力してください。':initialized?'管理者が発行した招待URLから登録してください。':'SQL設定時に指定した初回セットアップコードを入力してください。';$('registerForm').classList.toggle('hidden',initialized&&!invite);show('register');}
 async function init(){if(!config.supabaseUrl||!config.supabasePublishableKey){show('setup');return;}try{db=createClient(config.supabaseUrl,config.supabasePublishableKey,{auth:{persistSession:true,autoRefreshToken:true}});await publicState();const {data}=await db.auth.getUser();await sync(data?.user||null);db.auth.onAuthStateChange((_event,session)=>{const id=session?.user?.id||null;if(id!==(user?.id||null))setTimeout(()=>sync(session?.user||null),0);});}catch(e){show('setup');$('setup').insertAdjacentHTML('beforeend',`<p class="message error">${esc(e.message)}</p>`);}}
-async function sync(next){user=next;if(user){const {data,error}=await db.rpc('app_my_membership');membership=error?null:data;if(!membership?.active){await db.auth.signOut({scope:'local'});user=null;show('login');msg('loginMessage','このアカウントは利用権限がありません。',true);return;}$('userTab').classList.toggle('hidden',!['owner','admin'].includes(membership.role));$('inviteRole').querySelector('[value="admin"]').disabled=membership.role!=='owner';show('app');await reload();showIncomingShare();}else{membership=null;records=[];models=[];render();show('login');}}
+async function sync(next){user=next;if(user){const {data,error}=await db.rpc('app_my_membership');membership=error?null:data;if(!membership?.active){await db.auth.signOut({scope:'local'});user=null;show('login');msg('loginMessage','このアカウントは利用権限がありません。',true);return;}$('userTab').classList.toggle('hidden',!['owner','admin'].includes(membership.role));$('inviteRole').querySelector('[value="admin"]').disabled=membership.role!=='owner';show('app');await reload();await seedKnownModels();await reload();showIncomingShare();}else{membership=null;records=[];models=[];render();show('login');}}
 $('openRegister').onclick=()=>registerView();$('backToLogin').onclick=()=>show('login');
 $('registerForm').onsubmit=async e=>{e.preventDefault();const email=$('registerEmail').value.trim(),password=$('registerPassword').value;if(password!==$('registerConfirm').value){msg('registerMessage','確認用パスワードが一致しません',true);return;}const invite=new URLSearchParams(location.search).get('invite');if(initialized&&!invite){msg('registerMessage','招待URLから開いてください',true);return;}msg('registerMessage','登録処理中…');const metadata=invite?{invite_token:invite}:{setup_code:$('setupCode').value};const {data,error}=await db.auth.signUp({email,password,options:{data:metadata,emailRedirectTo:location.origin+location.pathname}});if(error){msg('registerMessage','登録に失敗しました。招待コード・メールアドレス・Supabase設定をご確認ください。詳細: '+error.message,true);return;}await publicState();history.replaceState({},'',location.pathname);$('registerPassword').value='';$('registerConfirm').value='';$('setupCode').value='';if(data.session){msg('registerMessage','登録しました。ログイン状態を確認します。');await sync(data.user);}else{msg('registerMessage','登録を受け付けました。確認メールが届いた場合は認証後にログインしてください。');}}
 $('loginForm').onsubmit=async e=>{e.preventDefault();if(!db)return;msg('loginMessage','ログイン中…');const {error}=await db.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});if(error)msg('loginMessage','ログインに失敗しました。メールアドレス・パスワードを確認してください。',true);else{msg('loginMessage','');$('password').value='';}};
@@ -140,7 +161,7 @@ function applyShortcutMetadata(raw){
   if(!obj || Array.isArray(obj) || typeof obj!=='object')return false;
   const isShortcut=String(obj.source||'').startsWith('safari-shortcuts-teramoba');
   const store=String(obj.store||obj.store_name||'').trim();
-  const machine=String(obj.machine||obj.machine_name||'').trim();
+  const machine=effectiveMachineName(String(obj.machine||obj.machine_name||'').trim());
   const date=String(obj.businessDate||obj.business_date||obj.date||'').trim();
   if(store && store.length<=120)$('store').value=store;
   if(machine && machine.length<=120)$('machine').value=machine;
@@ -163,7 +184,7 @@ $('saveRows').onclick=async()=>{
  if(!pending.length||pending.some(r=>!r.valid)||!user)return;
  const store=$('store').value.trim(),machine=$('machine').value.trim(),date=$('businessDate').value;
  if(!store||!machine||!/^\d{4}-\d{2}-\d{2}$/.test(date)){msg('importMessage','店舗・機種・営業日を確認してください',true);return;}
- const rows=pending.map(r=>({user_id:user.id,business_date:date,store_name:store,machine_name:machine,machine_number:r.machine_number,games:r.games,bb:r.bb,rb:r.rb,diff_medals:r.diff_medals,max_hold:r.max_hold,start_games:r.start_games,play_status:r.play_status}));
+ const rows=pending.map(r=>({user_id:user.id,business_date:date,store_name:store,machine_name:effectiveMachineName(machine),machine_number:r.machine_number,games:r.games,bb:r.bb,rb:r.rb,diff_medals:r.diff_medals,max_hold:r.max_hold,start_games:r.start_games,play_status:r.play_status}));
  $('saveRows').disabled=true;msg('importMessage',`${rows.length}件を保存しています…`);
  try{
   // Upsert is idempotent for the same user/date/store/machine/number.
@@ -186,5 +207,5 @@ $('saveModel').onclick=async()=>{const name=$('modelName').value.trim();const se
 // Independent binomial terms: BB occurs with pBB per game and RB with pRB per game.
 // Treat categories as mutually exclusive, using multinomial likelihood (constant omitted).
 function infer(record,model){if(!record.games||record.bb+record.rb>record.games)throw Error('回転数またはボーナス回数に誤りがあります');const logs=model.settings.map(x=>{const a=1/x.bb,b=1/x.rb,c=1-a-b;if(a<=0||b<=0||c<=0)throw Error('確率モデルが不正です');return record.bb*Math.log(a)+record.rb*Math.log(b)+(record.games-record.bb-record.rb)*Math.log(c);});if(logs.length!==6)throw Error('設定1〜6のデータが必要です');const max=Math.max(...logs),exp=logs.map(v=>Math.exp(v-max)),sum=exp.reduce((a,b)=>a+b,0);return exp.map((v,i)=>({setting:model.settings[i].setting,prob:v/sum}));}
-$('runAnalysis').onclick=()=>{const r=records.find(x=>x.id===$('analysisRecord').value),m=models.find(x=>x.id===$('analysisModel').value);if(!r||!m){msg('analysisMessage','台データと機種モデルを選択してください',true);return;}if(r.machine_name!==m.name){msg('analysisMessage','警告：台データとモデルの機種名が一致していません。分析を中止しました。',true);return;}try{const probs=infer(r,m),max=Math.max(...probs.map(x=>x.prob));$('analysisOutput').innerHTML=`<p><b>${esc(r.machine_name)} ${esc(r.machine_number)}番台</b> · ${r.games}G · BB ${r.bb} · RB ${r.rb} · 差枚 ${signed(r.diff_medals)} · 最大持玉 ${displayOptional(r.max_hold)} · 現在スタート ${displayOptional(r.start_games)} · 状態 ${esc(displayOptional(r.play_status))}</p><p class="warning">確率はモデルと等事前確率を仮定した相対値です。設定の真の確率や勝率ではありません。</p>`+probs.map(x=>`<div class="prob-row"><b>設定${x.setting}</b><div class="bar"><div class="fill" style="width:${Math.max(0,x.prob*100)}%"></div></div><b>${(x.prob*100).toFixed(1)}%</b></div>`).join('')+`<p class="hint">モデル：${esc(m.source_type)}／確認日：${esc(m.checked_on||'未設定')}。差枚は参考情報であり、この推定確率には直接加えていません。少ないG数では判断が不安定です。</p>`;msg('analysisMessage','分析しました');}catch(e){msg('analysisMessage',e.message,true);}};
+$('runAnalysis').onclick=()=>{const r=records.find(x=>x.id===$('analysisRecord').value),m=models.find(x=>x.id===$('analysisModel').value);if(!r||!m){msg('analysisMessage','台データと機種モデルを選択してください',true);return;}if(effectiveMachineName(r.machine_name)!==effectiveMachineName(m.name)){msg('analysisMessage','警告：台データとモデルの機種名が一致していません。分析を中止しました。',true);return;}try{const probs=infer(r,m),max=Math.max(...probs.map(x=>x.prob));$('analysisOutput').innerHTML=`<p><b>${esc(r.machine_name)} ${esc(r.machine_number)}番台</b> · ${r.games}G · BB ${r.bb} · RB ${r.rb} · 差枚 ${signed(r.diff_medals)} · 最大持玉 ${displayOptional(r.max_hold)} · 現在スタート ${displayOptional(r.start_games)} · 状態 ${esc(displayOptional(r.play_status))}</p><p class="warning">確率はモデルと等事前確率を仮定した相対値です。設定の真の確率や勝率ではありません。</p>`+probs.map(x=>`<div class="prob-row"><b>設定${x.setting}</b><div class="bar"><div class="fill" style="width:${Math.max(0,x.prob*100)}%"></div></div><b>${(x.prob*100).toFixed(1)}%</b></div>`).join('')+`<p class="hint">モデル：${esc(m.source_type)}／確認日：${esc(m.checked_on||'未設定')}。差枚は参考情報であり、この推定確率には直接加えていません。少ないG数では判断が不安定です。</p>`;msg('analysisMessage','分析しました');}catch(e){msg('analysisMessage',e.message,true);}};
 init();
