@@ -2,6 +2,32 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 const $ = id => document.getElementById(id);
 const config=window.APP_CONFIG||{};
 let db=null, user=null, records=[], models=[], pending=[], membership=null, initialized=false;
+// Safari share handoff. Payload stays in the URL fragment (never in HTTP requests).
+// Remove it from address/history immediately; parse only after authenticated sign-in.
+let incomingShare=null;
+function captureShare(){
+ const hash=location.hash;
+ if(!hash.startsWith('#ja06='))return;
+ history.replaceState(null,'',location.pathname+location.search);
+ try{
+  const encoded=hash.slice(6);
+  if(encoded.length>16000 || !/^[A-Za-z0-9_-]+$/.test(encoded))throw Error('共有データが長すぎるか形式が不正です');
+  const binary=atob(encoded.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-encoded.length%4)%4));
+  const bytes=Uint8Array.from(binary,c=>c.charCodeAt(0));
+  const packed=JSON.parse(new TextDecoder().decode(bytes));
+  if(!Array.isArray(packed)||packed[0]!==6||!Array.isArray(packed[4])||packed[4].length>500)throw Error('共有形式が不正です');
+  incomingShare=JSON.stringify({source:'safari-shortcuts-teramoba-v6',store:packed[1],machine:packed[2],businessDate:packed[3],rows:packed[4].map(r=>({'台番号':r[0],'総回転数':r[1],BB:r[2],RB:r[3],'差玉':r[4],'最大持玉':r[5],'スタート':r[6],'状態':r[7]}))});
+ }catch(e){incomingShare=JSON.stringify({error:'共有データを読み取れません: '+e.message});}
+}
+function showIncomingShare(){
+ if(!user||!incomingShare)return;
+ const raw=incomingShare;incomingShare=null;
+ tab('import');$('rawData').value=raw;
+ applyShortcutMetadata(raw);$('preview').click();
+}
+captureShare();
+window.addEventListener('hashchange',()=>{captureShare();showIncomingShare();});
+
 const text=(el,v)=>{el.textContent=v;};
 const msg=(id,v,error=false)=>{const el=$(id);text(el,v);el.classList.toggle('error',error);};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -32,7 +58,7 @@ async function reload(){if(!user)return;const [a,b]=await Promise.all([db.from('
 async function publicState(){const {data,error}=await db.rpc('app_public_state');if(error)throw Error('認証用SQLが未適用です: '+error.message);initialized=Boolean(data?.initialized);}
 function registerView(){const query=new URLSearchParams(location.search),invite=query.get('invite');$('setupCodeField').classList.toggle('hidden',!!invite||initialized);$('setupCode').required=!invite&&!initialized;$('registerTitle').textContent=invite?'招待アカウント登録':initialized?'招待が必要です':'最高管理者の初回登録';$('registerHelp').textContent=invite?'招待されたメールアドレスを入力してください。':initialized?'管理者が発行した招待URLから登録してください。':'SQL設定時に指定した初回セットアップコードを入力してください。';$('registerForm').classList.toggle('hidden',initialized&&!invite);show('register');}
 async function init(){if(!config.supabaseUrl||!config.supabasePublishableKey){show('setup');return;}try{db=createClient(config.supabaseUrl,config.supabasePublishableKey,{auth:{persistSession:true,autoRefreshToken:true}});await publicState();const {data}=await db.auth.getUser();await sync(data?.user||null);db.auth.onAuthStateChange((_event,session)=>{const id=session?.user?.id||null;if(id!==(user?.id||null))setTimeout(()=>sync(session?.user||null),0);});}catch(e){show('setup');$('setup').insertAdjacentHTML('beforeend',`<p class="message error">${esc(e.message)}</p>`);}}
-async function sync(next){user=next;if(user){const {data,error}=await db.rpc('app_my_membership');membership=error?null:data;if(!membership?.active){await db.auth.signOut({scope:'local'});user=null;show('login');msg('loginMessage','このアカウントは利用権限がありません。',true);return;}$('userTab').classList.toggle('hidden',!['owner','admin'].includes(membership.role));$('inviteRole').querySelector('[value="admin"]').disabled=membership.role!=='owner';show('app');await reload();}else{membership=null;records=[];models=[];render();show('login');}}
+async function sync(next){user=next;if(user){const {data,error}=await db.rpc('app_my_membership');membership=error?null:data;if(!membership?.active){await db.auth.signOut({scope:'local'});user=null;show('login');msg('loginMessage','このアカウントは利用権限がありません。',true);return;}$('userTab').classList.toggle('hidden',!['owner','admin'].includes(membership.role));$('inviteRole').querySelector('[value="admin"]').disabled=membership.role!=='owner';show('app');await reload();showIncomingShare();}else{membership=null;records=[];models=[];render();show('login');}}
 $('openRegister').onclick=()=>registerView();$('backToLogin').onclick=()=>show('login');
 $('registerForm').onsubmit=async e=>{e.preventDefault();const email=$('registerEmail').value.trim(),password=$('registerPassword').value;if(password!==$('registerConfirm').value){msg('registerMessage','確認用パスワードが一致しません',true);return;}const invite=new URLSearchParams(location.search).get('invite');if(initialized&&!invite){msg('registerMessage','招待URLから開いてください',true);return;}msg('registerMessage','登録処理中…');const metadata=invite?{invite_token:invite}:{setup_code:$('setupCode').value};const {data,error}=await db.auth.signUp({email,password,options:{data:metadata,emailRedirectTo:location.origin+location.pathname}});if(error){msg('registerMessage','登録に失敗しました。招待コード・メールアドレス・Supabase設定をご確認ください。詳細: '+error.message,true);return;}await publicState();history.replaceState({},'',location.pathname);$('registerPassword').value='';$('registerConfirm').value='';$('setupCode').value='';if(data.session){msg('registerMessage','登録しました。ログイン状態を確認します。');await sync(data.user);}else{msg('registerMessage','登録を受け付けました。確認メールが届いた場合は認証後にログインしてください。');}}
 $('loginForm').onsubmit=async e=>{e.preventDefault();if(!db)return;msg('loginMessage','ログイン中…');const {error}=await db.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});if(error)msg('loginMessage','ログインに失敗しました。メールアドレス・パスワードを確認してください。',true);else{msg('loginMessage','');$('password').value='';}};
@@ -48,12 +74,21 @@ const cleanKey=s=>String(s).toLowerCase().replace(/[\s_\-()（）]/g,'');
 function parseInput(raw){let arr;if(raw.trim().startsWith('[')||raw.trim().startsWith('{')){let json=JSON.parse(raw);if(json.error)throw Error(json.error);arr=Array.isArray(json)?json:json.rows||json.data||json.records;if(!Array.isArray(arr))throw Error('JSONは配列、またはrows/data/records配列を持つ必要があります');}else{const lines=csvRows(raw);if(lines.length<2)throw Error('見出し行とデータ行が必要です');arr=lines.slice(1).map(row=>Object.fromEntries(lines[0].map((h,i)=>[h,row[i]??''])));}if(arr.length>500)throw Error('一度の取込は500台までにしてください');return arr.map((v,i)=>{if(Array.isArray(v))throw Error('JSONはキー付きオブジェクトにしてください');const obj=Object.fromEntries(Object.entries(v).map(([k,val])=>[cleanKey(k),val]));const get=(...keys)=>{for(const k of keys){const val=obj[cleanKey(k)];if(val!==undefined&&val!==null&&val!=='')return val;}return undefined;};const r={machine_number:String(get('台番号','台','number','machine_number','台番')??'').trim(),games:num(get('総回転数','回転数','ゲーム数','G','games','totalgames')),bb:num(get('BB','big','bigbonus')),rb:num(get('RB','REG','regular','reg')),diff_medals:optionalInt(get('差玉','差枚','差枚数','差玉数','diff_medals','difference')),max_hold:optionalInt(get('最大持玉','最大持ち玉','最大持メダル','最大獲得枚数','max_hold')),start_games:optionalInt(get('スタート','現在スタート','現在のスタート回転数','start_games')),play_status:String(get('状態','稼働状態','status','play_status')??'').trim()||null};r.valid=!!r.machine_number&&r.machine_number.length<=40&&[r.games,r.bb,r.rb].every(n=>Number.isInteger(n)&&n>=0&&n<=100000)&&r.bb+r.rb<=r.games&&r.bb<=10000&&r.rb<=10000&&[r.diff_medals,r.max_hold,r.start_games].every(n=>n===null||(Number.isSafeInteger(n)&&Math.abs(n)<=10000000))&&(r.play_status===null||r.play_status.length<=40);r.issue=r.valid?'OK':`行${i+2}：値を確認`;return r;});}
 // Shortcut export: accepting JSON copied by the user, not reading third-party pages here.
 function applyShortcutMetadata(raw){
-  let obj;try{obj=JSON.parse(raw);}catch{return;}
-  if(!obj || Array.isArray(obj) || typeof obj!=='object')return;
-  if(typeof obj.store==='string' && obj.store.length<=120)$('store').value=obj.store;
-  if(typeof obj.machine==='string' && obj.machine.length<=120)$('machine').value=obj.machine;
-  if(typeof obj.businessDate==='string' && /^\d{4}-\d{2}-\d{2}$/.test(obj.businessDate))$('businessDate').value=obj.businessDate;
+  let obj;
+  try{obj=JSON.parse(raw);}catch{return false;}
+  if(!obj || Array.isArray(obj) || typeof obj!=='object')return false;
+  const isShortcut=String(obj.source||'').startsWith('safari-shortcuts-teramoba');
+  const store=String(obj.store||obj.store_name||'').trim();
+  const machine=String(obj.machine||obj.machine_name||'').trim();
+  const date=String(obj.businessDate||obj.business_date||obj.date||'').trim();
+  if(store && store.length<=120)$('store').value=store;
+  if(machine && machine.length<=120)$('machine').value=machine;
+  if(/^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(date+'T00:00:00')))$('businessDate').value=date;
+  else if(isShortcut)$('businessDate').value=''; // 営業日未取得時は「今日」で勝手に保存しない
+  if(isShortcut && (!store||!machine||!date))msg('importMessage','取得データに店舗・機種・営業日の一部がありません。ショートカットを更新してください。',true);
+  return Boolean($('store').value.trim() && $('machine').value.trim() && $('businessDate').value);
 }
+$('rawData').addEventListener('input',()=>{applyShortcutMetadata($('rawData').value);});
 $('pasteClipboard').onclick=async()=>{
  try{const raw=await navigator.clipboard.readText();if(!raw.trim())throw Error('クリップボードが空です');
  if(raw.length>1000000)throw Error('読み込むデータが大きすぎます');
@@ -62,7 +97,7 @@ $('pasteClipboard').onclick=async()=>{
 };
 $('openTeramoba').onclick=()=>window.open('https://nobuta.pt.teramoba2.com/lightshinshigai/rack_info','_blank','noopener,noreferrer');
 $('importFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>1024*1024){msg('importMessage','ファイルは1MB以下にしてください',true);return;}$('rawData').value=await f.text();applyShortcutMetadata($('rawData').value);};
-$('preview').onclick=()=>{pending=[];$('saveRows').disabled=true;const store=$('store').value.trim(),machine=$('machine').value.trim(),date=$('businessDate').value;if(!store||!machine||!date){msg('importMessage','店舗・機種・営業日を入力してください',true);return;}try{pending=parseInput($('rawData').value);if(!pending.length)throw Error('台データがありません');const seen=new Set();for(const r of pending){if(seen.has(r.machine_number)){r.valid=false;r.issue='同じ台番号が複数あります';}seen.add(r.machine_number);}const tbody=$('previewRows');tbody.replaceChildren();for(const r of pending){const tr=document.createElement('tr');for(const value of [r.machine_number,r.games,r.bb,r.rb,signed(r.diff_medals),displayOptional(r.max_hold),displayOptional(r.start_games),displayOptional(r.play_status),r.issue]){const td=document.createElement('td');td.textContent=String(value);tr.append(td);}tbody.appendChild(tr);}$('saveRows').disabled=pending.some(r=>!r.valid);msg('importMessage',`${pending.length}件読み取りました。${pending.filter(r=>!r.valid).length}件に確認が必要です。`,pending.some(r=>!r.valid));}catch(e){msg('importMessage',e.message,true);}};
+$('preview').onclick=()=>{pending=[];$('saveRows').disabled=true;applyShortcutMetadata($('rawData').value);const store=$('store').value.trim(),machine=$('machine').value.trim(),date=$('businessDate').value;if(!store||!machine||!date){msg('importMessage','店舗・機種・営業日を入力してください',true);return;}try{pending=parseInput($('rawData').value);if(!pending.length)throw Error('台データがありません');const seen=new Set();for(const r of pending){if(seen.has(r.machine_number)){r.valid=false;r.issue='同じ台番号が複数あります';}seen.add(r.machine_number);}const tbody=$('previewRows');tbody.replaceChildren();for(const r of pending){const tr=document.createElement('tr');for(const value of [r.machine_number,r.games,r.bb,r.rb,signed(r.diff_medals),displayOptional(r.max_hold),displayOptional(r.start_games),displayOptional(r.play_status),r.issue]){const td=document.createElement('td');td.textContent=String(value);tr.append(td);}tbody.appendChild(tr);}$('saveRows').disabled=pending.some(r=>!r.valid);msg('importMessage',`${pending.length}件読み取りました。${pending.filter(r=>!r.valid).length}件に確認が必要です。`,pending.some(r=>!r.valid));}catch(e){msg('importMessage',e.message,true);}};
 $('saveRows').onclick=async()=>{if(!pending.length||pending.some(r=>!r.valid)||!user)return;const rows=pending.map(r=>({user_id:user.id,business_date:$('businessDate').value,store_name:$('store').value.trim(),machine_name:$('machine').value.trim(),machine_number:r.machine_number,games:r.games,bb:r.bb,rb:r.rb,diff_medals:r.diff_medals,max_hold:r.max_hold,start_games:r.start_games,play_status:r.play_status}));$('saveRows').disabled=true;msg('importMessage','保存中…');const {error}=await db.from('machine_records').upsert(rows,{onConflict:'user_id,business_date,store_name,machine_name,machine_number'});if(error){msg('importMessage',error.message,true);$('saveRows').disabled=false;return;}msg('importMessage',`${rows.length}件保存しました。同じ日付・店舗・機種・台番号は上書きされます。`);pending=[];await reload();};
 $('saveModel').onclick=async()=>{const name=$('modelName').value.trim();const settings=[];for(let i=1;i<=6;i++)settings.push({setting:i,bb:Number($('bb'+i).value),rb:Number($('rb'+i).value)});if(!name||settings.some(s=>!Number.isFinite(s.bb)||!Number.isFinite(s.rb)||s.bb<=1||s.rb<=1)){msg('modelMessage','名前と設定1〜6のBB・RB分母（1より大きい数）をすべて入力してください',true);return;}const source_url=$('modelSource').value.trim()||null;if($('modelType').value!=='manual'&&!source_url){msg('modelMessage','公式値・解析値を登録するときは出典URLが必要です',true);return;}const {error}=await db.from('machine_models').upsert({user_id:user.id,name,source_type:$('modelType').value,source_url,checked_on:$('modelChecked').value||null,settings},{onConflict:'user_id,name'});if(error)msg('modelMessage',error.message,true);else{msg('modelMessage','モデルを保存しました');await reload();}};
 // Independent binomial terms: BB occurs with pBB per game and RB with pRB per game.
