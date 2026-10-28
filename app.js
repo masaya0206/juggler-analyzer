@@ -5,24 +5,44 @@ let db=null, user=null, records=[], models=[], pending=[], membership=null, init
 // Safari share handoff. Payload stays in the URL fragment (never in HTTP requests).
 // Remove it from address/history immediately; parse only after authenticated sign-in.
 let incomingShare=null;
+function decodeSharedV06(fragment){
+ // Safari/Shortcuts may percent-escape or reformat the URL fragment.
+ let value=fragment;
+ try { value=decodeURIComponent(value); } catch (_) { /* retain original */ }
+ value=value.replace(/\s/g,'').replace(/ /g,'+');
+ // Remove any extra hash/query suffix; only one payload is permitted.
+ if(!/^[A-Za-z0-9_\-+/=]+$/.test(value)){
+   throw Error('共有URLにBase64以外の文字が含まれています（長さ '+value.length+' 文字）');
+ }
+ const unpadded=value.replace(/=+$/,'');
+ if(unpadded.length>16000)throw Error('共有URLが上限の16000文字を超えています');
+ if(unpadded.length%4===1)throw Error('共有URLの末尾が欠けています（長さ '+unpadded.length+' 文字）');
+ const normalized=unpadded.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-unpadded.length%4)%4);
+ let binary;
+ try{binary=atob(normalized);}
+ catch(e){throw Error('Base64復元失敗（長さ '+unpadded.length+' 文字、余り '+(unpadded.length%4)+'）。URLが途中で欠けている可能性があります');}
+ let packed;
+ try{packed=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(binary,c=>c.charCodeAt(0))));}
+ catch(e){throw Error('UTF-8/JSONの復元に失敗。URLが途中で欠けた可能性があります: '+e.message);}
+ if(!Array.isArray(packed)||packed[0]!==6||!Array.isArray(packed[4])||packed[4].length>500){throw Error('共有データの構造が不正です');}
+ return packed;
+}
 function captureShare(){
  const hash=location.hash;
  if(!hash.startsWith('#ja06='))return;
+ // Remove fragment promptly to avoid retaining captured data in history.
  history.replaceState(null,'',location.pathname+location.search);
  try{
-  const encoded=hash.slice(6);
-  if(encoded.length>16000 || !/^[A-Za-z0-9_-]+$/.test(encoded))throw Error('共有データが長すぎるか形式が不正です');
-  const binary=atob(encoded.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-encoded.length%4)%4));
-  const bytes=Uint8Array.from(binary,c=>c.charCodeAt(0));
-  const packed=JSON.parse(new TextDecoder().decode(bytes));
-  if(!Array.isArray(packed)||packed[0]!==6||!Array.isArray(packed[4])||packed[4].length>500)throw Error('共有形式が不正です');
+  const packed=decodeSharedV06(hash.slice(6));
   incomingShare=JSON.stringify({source:'safari-shortcuts-teramoba-v6',store:packed[1],machine:packed[2],businessDate:packed[3],rows:packed[4].map(r=>({'台番号':r[0],'総回転数':r[1],BB:r[2],RB:r[3],'差玉':r[4],'最大持玉':r[5],'スタート':r[6],'状態':r[7]}))});
  }catch(e){incomingShare=JSON.stringify({error:'共有データを読み取れません: '+e.message});}
 }
+
 function showIncomingShare(){
  if(!user||!incomingShare)return;
  const raw=incomingShare;incomingShare=null;
  tab('import');$('rawData').value=raw;
+ try{const obj=JSON.parse(raw);if(obj?.error){msg('importMessage',obj.error,true);$('saveRows').disabled=true;return;}}catch(_){}
  applyShortcutMetadata(raw);$('preview').click();
 }
 captureShare();
