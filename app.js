@@ -121,14 +121,17 @@ function renderComparison(){
  const evaluated=records.filter(r=>(!date||r.business_date===date)&&(!machine||r.machine_name===machine)).map(r=>{
   const metrics=inferenceMetrics(r);return {r,...metrics};
  });
- evaluated.sort((a,b)=>{
-  if(key==='number')return Number(a.r.machine_number)-Number(b.r.machine_number)||String(a.r.machine_number).localeCompare(String(b.r.machine_number),'ja',{numeric:true});
+ // High-setting candidates: expected setting >= 4.0, ordered by machine number.
+ // Machines without a validated model are excluded from this candidate view.
+ const visible = key==='high_number' ? evaluated.filter(x=>x.expected!==null && x.expected>=4.0) : evaluated;
+ visible.sort((a,b)=>{
+  if(key==='number'||key==='high_number')return Number(a.r.machine_number)-Number(b.r.machine_number)||String(a.r.machine_number).localeCompare(String(b.r.machine_number),'ja',{numeric:true});
   if(key==='expected_setting')return (b.expected??-1)-(a.expected??-1)||Number(a.r.machine_number)-Number(b.r.machine_number);
   if(key==='high_prob')return (b.high??-1)-(a.high??-1);
   if(key==='games')return (b.r.games||0)-(a.r.games||0);
   return (b.r.diff_medals??-Infinity)-(a.r.diff_medals??-Infinity);
  });
- for(const {r,high,expected,likely} of evaluated.slice(0,500)){
+ for(const {r,high,expected,likely} of visible.slice(0,500)){
   const tr=document.createElement('tr');
   for(const v of [r.business_date,r.machine_name,r.machine_number,r.games,r.bb,r.rb,signed(r.diff_medals),displayOptional(r.max_hold),displayOptional(r.start_games),displayOptional(r.play_status),expected===null?'未推定':expected.toFixed(2),likely===null?'未推定':'設定'+likely,high===null?'モデル未登録 / 判定不可':(high*100).toFixed(1)+'%']){
    const td=document.createElement('td');td.textContent=v;tr.append(td);
@@ -137,7 +140,7 @@ function renderComparison(){
   button.disabled=high===null;button.onclick=()=>{tab('analyze');$('analysisRecord').value=r.id;$('analysisModel').value=modelFor(r.machine_name)?.id||'';$('runAnalysis').click();};
   td.append(button);tr.append(td);body.append(tr);
  }
- if(!evaluated.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=14;td.textContent='該当するデータはありません';tr.append(td);body.append(tr);}
+ if(!visible.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=14;td.textContent=key==='high_number'?'推定設定値4.0以上の台はありません（機種モデル未登録の台は対象外）':'該当するデータはありません';tr.append(td);body.append(tr);}
 }
 $('comparisonSort').onchange=renderComparison;
 $('comparisonDate').onchange=renderComparison;
