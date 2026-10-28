@@ -27,6 +27,18 @@ function decodeSharedV06(fragment){
  if(!Array.isArray(packed)||packed[0]!==6||!Array.isArray(packed[4])||packed[4].length>500){throw Error('共有データの構造が不正です');}
  return packed;
 }
+// When iOS truncates a long URL, Shortcuts can copy the complete URL to the clipboard.
+function decodeSharedLinkText(text){
+ const value=String(text||'').trim();
+ const prefix='https://masaya0206.github.io/juggler-analyzer/';
+ if(value.startsWith(prefix)){
+  const hash=value.indexOf('#ja06=');
+  if(hash<0)throw Error('共有リンクに台データがありません');
+  const packed=decodeSharedV06(value.slice(hash+6));
+  return JSON.stringify({source:'safari-shortcuts-teramoba-v6',store:packed[1],machine:packed[2],businessDate:packed[3],rows:packed[4].map(r=>({'台番号':r[0],'総回転数':r[1],BB:r[2],RB:r[3],'差玉':r[4],'最大持玉':r[5],'スタート':r[6],'状態':r[7]}))});
+ }
+ return value;
+}
 function captureShare(){
  const hash=location.hash;
  if(!hash.startsWith('#ja06='))return;
@@ -112,7 +124,7 @@ $('rawData').addEventListener('input',()=>{applyShortcutMetadata($('rawData').va
 $('pasteClipboard').onclick=async()=>{
  try{const raw=await navigator.clipboard.readText();if(!raw.trim())throw Error('クリップボードが空です');
  if(raw.length>1000000)throw Error('読み込むデータが大きすぎます');
- $('rawData').value=raw;applyShortcutMetadata(raw);tab('import');$('preview').click();
+ const decoded=decodeSharedLinkText(raw);$('rawData').value=decoded;applyShortcutMetadata(decoded);tab('import');$('preview').click();
  }catch(e){msg('importMessage','自動貼り付けできません: '+e.message+'。下のテキスト欄に手動で貼り付けてください。',true);}
 };
 $('openTeramoba').onclick=()=>window.open('https://nobuta.pt.teramoba2.com/lightshinshigai/rack_info','_blank','noopener,noreferrer');
