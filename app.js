@@ -297,6 +297,47 @@ function renderComparison(){
   if(key==='games')return (b.r.games||0)-(a.r.games||0);
   return (b.r.diff_medals??-Infinity)-(a.r.diff_medals??-Infinity);
  });
+ // Experimental empirical-Bayes estimate of the store/day setting mix.
+ // Each machine contributes an entire likelihood vector; a 6-cell Dirichlet
+ // regularizer prevents low-sample days from producing zero/one probabilities.
+ // Use leave-one-out group composition to avoid a machine reinforcing itself.
+ function empiricalMix(rows){
+  const data=rows.map(x=>{
+   if(!x.model)return null;
+   try{const p=infer(x.r,x.model).map(a=>Number(a.prob));
+    if(p.length!==6||p.some(v=>!Number.isFinite(v)||v<0))return null;
+    const total=p.reduce((a,b)=>a+b,0);return total>0?p.map(v=>v/total):null;
+   }catch{return null;}
+  });
+  const valid=data.filter(Boolean),k=valid.length;
+  if(k<8)return null; // Too little cross-machine evidence for a mix estimate.
+  const prior=Array(6).fill(1/6),strength=12; // regularizing pseudo-counts; hypothetical, not an empirical store prior.
+  let mix=prior.slice();
+  for(let iteration=0;iteration<150;iteration++){
+   const counts=Array(6).fill(strength/6);
+   for(const probs of valid){
+    const raw=probs.map((q,j)=>q*mix[j]/prior[j]);
+    const den=raw.reduce((a,b)=>a+b,0);
+    for(let j=0;j<6;j++)counts[j]+=raw[j]/den;
+   }
+   const next=counts.map(v=>v/(k+strength));
+   const delta=next.reduce((a,v,j)=>a+Math.abs(v-mix[j]),0);mix=next;
+   if(delta<1e-8)break;
+  }
+  let sum=0,used=0;
+  for(let i=0;i<data.length;i++){
+   if(!data[i])continue;
+   // Approximate leave-one-out composition by subtracting this record's responsibility.
+   const rawSelf=data[i].map((q,j)=>q*mix[j]/prior[j]);
+   const normSelf=rawSelf.reduce((a,b)=>a+b,0);
+   const own=rawSelf.map(v=>v/normSelf);
+   const loo=mix.map((v,j)=>Math.max(1e-8,((k+strength)*v-own[j])/(k-1+strength)));
+   const probs=data[i].map((q,j)=>q*loo[j]/prior[j]);
+   const norm=probs.reduce((a,b)=>a+b,0);
+   sum+=probs.reduce((a,v,j)=>a+(j+1)*v/norm,0);used++;
+  }
+  return {average:sum/used,used,priorStrength:strength,mix};
+ }
  // Each x.expected is already Σ(setting × posterior probability); average across filtered records.
  // Summary follows the selected date, model, and ranking filter. Unestimated records are excluded.
  const estimatedRows=visible.filter(x=>Number.isFinite(x.expected));
@@ -330,6 +371,19 @@ function renderComparison(){
   activitySummary.querySelector('[data-activity-note]').textContent=activityAverage===null
    ?'選択した営業日の前7日間に、同じ店舗の保存データがありません。7日分が蓄積されると比較できます。'
    :`各台の重み＝min(1, 回転数÷前7日間の日別最大回転数平均)。基準日数 ${Math.min(...referenceDays)}〜${Math.max(...referenceDays)}日／最大7日。高稼働台を重視する参考平均で、設定推定の正解率ではありません。`;
+ }
+ // Only make the experimental estimate for a single business day and store;
+ // a mixed-date or mixed-store screen is not a coherent common setting mix.
+ const empiricalNode=$('rankEmpiricalAverage');
+ if(empiricalNode){
+  const dates=new Set(visible.map(x=>x.r.business_date));
+  const stores=new Set(visible.map(x=>x.r.store_name||''));
+  const eb=(dates.size===1&&stores.size===1)?empiricalMix(visible):null;
+  empiricalNode.querySelector('[data-eb-value]').textContent=eb?eb.average.toFixed(2):'算出不可';
+  empiricalNode.querySelector('[data-eb-count]').textContent=eb?`解析可能 ${eb.used}台 / 表示対象 ${visible.length}台`:'同一店舗・同一日の8台以上が必要';
+  empiricalNode.querySelector('[data-eb-note]').textContent=eb
+   ?'同じ日の全台から設定配分を推定した試験的な平均。各台の推定分布を利用し、自己データの再利用を軽減。事前分布は均等・正則化強度12。モデル誤差や稼働選択バイアスは解消しません。'
+   :'複数日・複数店舗の混在、対象台数不足、またはモデル未登録のため算出できません。';
  }
  const summary=$('rankSettingAverage');
  if(summary){
