@@ -5,7 +5,7 @@ const CATALOG_CHECKED='2026-10-28';
 const CURATED_CATALOG=[
  {"name":"マイジャグラーV","aliases":["マイジャグラー5","マイジャグラーⅤ","SマイジャグラーVKD","SマイジャグラーⅤKD","マイジャグ5"],"url":"https://www.kitadenshi.co.jp/fun/","sourceType":"official","bb":[273.1,270.8,266.4,254,240.1,229.1],"rb":[409.6,385.5,336.1,290,268.6,229.1],"payout":[97,98,99.9,102.8,105.3,109.4]},
  {"name":"マイジャグラーVI","aliases":["マイジャグラー6","マイジャグラーⅥ","マイジャグVI","マイジャグ6"],"url":"https://www.kitadenshi.co.jp/fun/","sourceType":"official","bb":[273.1,270.8,266.4,254,240.1,229.1],"rb":[409.6,385.5,336.1,290,268.6,229.1],"payout":[97,98,99.9,102.8,105.3,109.4]},
- {"name":"アイムジャグラーEX","aliases":["SアイムジャグラーEX","アイムジャグラーＥＸ","SアイムジャグラーEX-TP","SアイムジャグラーEXTP","アイムEX"],"url":"https://pachislot-memo.online/juggler-all","sourceType":"secondary","bb":[273.1,269.7,269.7,259,259,255],"rb":[439.8,399.6,331,315.1,255,255],"payout":[97,98,99.5,101.1,103.3,105.5]},
+ {"name":"アイムジャグラーEX","aliases":["SアイムジャグラーEX","アイムジャグラーＥＸ","SアイムジャグラーEX-TP","SアイムジャグラーEXTP","SアイムジャグラーEX-KK","SアイムジャグラーEXKK","アイムEX"],"url":"https://pachislot-memo.online/juggler-all","sourceType":"secondary","bb":[273.1,269.7,269.7,259,259,255],"rb":[439.8,399.6,331,315.1,255,255],"payout":[97,98,99.5,101.1,103.3,105.5]},
  {"name":"ネオアイムジャグラーEX","aliases":["ネオアイムジャグラー","ネオアイム","ネオアイムEX"],"url":"https://tsumoreru.com/machines/juggler_neo_im_ex/","sourceType":"secondary","bb":[273.1,269.7,269.7,259,259,255],"rb":[439.8,399.6,331,315.1,255,255],"payout":[97,98,99.5,101.1,103.3,105.5]},
  {"name":"ゴーゴージャグラー3","aliases":["ゴーゴージャグラーⅢ","Sゴーゴージャグラー3","ゴージャグ3"],"url":"https://pachislot-memo.online/juggler-all","sourceType":"secondary","bb":[259,258,257,254,247.3,234.9],"rb":[354.2,332.7,306.2,268.6,247.3,234.9],"payout":[97.2,98.2,99.4,101.6,103.8,106.5]},
  {"name":"ファンキージャグラー2","aliases":["ファンキージャグラーⅡ","ファンキー2","ファンキー"],"url":"https://pachislot-memo.online/juggler-all","sourceType":"secondary","bb":[266.4,259,256,249.2,240.1,219.9],"rb":[439.8,407.1,366.1,322.8,299.3,262.1]},
@@ -204,15 +204,84 @@ function renderComparison(){
  });
  for(const {r,high,expected,likely} of visible.slice(0,500)){
   const tr=document.createElement('tr');
-  for(const v of [r.business_date,r.machine_name,r.machine_number,r.games,r.bb,r.rb,signed(r.diff_medals),displayOptional(r.max_hold),displayOptional(r.start_games),displayOptional(r.play_status),expected===null?'未推定':expected.toFixed(2),likely===null?'未推定':'設定'+likely,high===null?'モデル未登録 / 判定不可':(high*100).toFixed(1)+'%']){
-   const td=document.createElement('td');td.textContent=v;tr.append(td);
+  for(const [colIndex,v] of [r.business_date,r.machine_name,r.machine_number,r.games,r.bb,r.rb,signed(r.diff_medals),displayOptional(r.max_hold),displayOptional(r.start_games),displayOptional(r.play_status),expected===null?'未推定':expected.toFixed(2),likely===null?'未推定':'設定'+likely,high===null?'モデル未登録 / 判定不可':(high*100).toFixed(1)+'%'].entries()){
+   const td=document.createElement('td');td.textContent=v;td.dataset.col=String(colIndex);tr.append(td);
   }
   const td=document.createElement('td'),button=document.createElement('button');button.className='secondary';button.textContent='分析';
-  button.disabled=high===null;button.onclick=()=>{tab('analyze');$('analysisRecord').value=r.id;$('analysisModel').value=modelFor(r.machine_name)?.id||'';$('runAnalysis').click();};
+  button.textContent='詳細';button.disabled=high===null;button.onclick=()=>{tab('analyze');$('analysisRecord').value=r.id;$('analysisModel').value=modelFor(r.machine_name)?.id||'';$('runAnalysis').click();};
   td.append(button);tr.append(td);body.append(tr);
  }
  if(!visible.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=14;td.textContent=key==='high_number'?'推定設定値4.0以上の台はありません（機種モデル未登録の台は対象外）':'該当するデータはありません';tr.append(td);body.append(tr);}
 }
+
+// Ranking layout preferences are device-local; no server writes.
+const RANK_DENSITY_KEY='juggler-ranking-density-v1';
+const RANK_SCALE_KEY='juggler-ranking-scale-v1';
+const rankPanel=document.getElementById('comparison');
+function setRankingLayout(){
+ const compact=document.getElementById('rankCompact')?.checked ?? true;
+ const scale=Number(document.getElementById('rankScale')?.value||75);
+ rankPanel?.classList.toggle('rank-compact',compact);
+ rankPanel?.style.setProperty('--rank-scale',String(scale/100));
+ const label=document.getElementById('rankScaleLabel');if(label)label.textContent=scale+'%';
+ localStorage.setItem(RANK_DENSITY_KEY,compact?'compact':'full');
+ localStorage.setItem(RANK_SCALE_KEY,String(scale));
+}
+if(document.getElementById('rankCompact')){
+ document.getElementById('rankCompact').checked=localStorage.getItem(RANK_DENSITY_KEY)!=='full';
+ document.getElementById('rankScale').value=localStorage.getItem(RANK_SCALE_KEY)||'75';
+ document.getElementById('rankCompact').addEventListener('change',setRankingLayout);
+ document.getElementById('rankScale').addEventListener('input',setRankingLayout);
+ setRankingLayout();
+}
+function rankingExportData(){
+ const date=document.getElementById('comparisonDate')?.value||'',machine=document.getElementById('comparisonMachine')?.value||'';
+ const sort=document.getElementById('comparisonSort')?.value||'expected_setting';
+ let data=records.filter(r=>(!date||r.business_date===date)&&(!machine||r.machine_name===machine)).map(r=>({r,...inferenceMetrics(r)}));
+ if(sort==='high_number')data=data.filter(x=>x.expected!==null&&x.expected>=4);
+ data.sort((a,b)=>{
+  if(sort==='number'||sort==='high_number')return String(a.r.machine_number).localeCompare(String(b.r.machine_number),'ja',{numeric:true});
+  if(sort==='expected_setting')return (b.expected??-1)-(a.expected??-1);
+  if(sort==='high_prob')return (b.high??-1)-(a.high??-1);
+  if(sort==='games')return (b.r.games||0)-(a.r.games||0);
+  return (b.r.diff_medals??-Infinity)-(a.r.diff_medals??-Infinity);
+ });
+ return data;
+}
+async function exportRankingExcel(){
+ const button=document.getElementById('rankExport');button.disabled=true;button.textContent='Excel生成中…';
+ try{
+  if(typeof ExcelJS==='undefined')throw Error('Excelライブラリを読み込めません。ネット接続を確認してください。');
+  const rows=rankingExportData();if(!rows.length)throw Error('出力する台データがありません');
+  const book=new ExcelJS.Workbook();book.creator='Juggler Analyzer';book.created=new Date();
+  const sheet=book.addWorksheet('全台ランキング',{views:[{state:'frozen',ySplit:2}]});
+  const date=document.getElementById('comparisonDate')?.value||'全日程';
+  sheet.mergeCells('A1:N1');sheet.getCell('A1').value='ジャグラー 全台設定ランキング / '+date;
+  sheet.getCell('A1').font={name:'Yu Gothic',bold:true,size:15,color:{argb:'FFFFFFFF'}};
+  sheet.getCell('A1').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF18283F'}};
+  sheet.getRow(1).height=31;
+  const labels=['営業日','店舗','機種','台番号','総回転数','BB','RB','差枚','最大持玉','スタート','稼働状態','推定設定値','最有力設定','設定4〜6確率'];
+  const header=sheet.getRow(2);labels.forEach((label,i)=>header.getCell(i+1).value=label);
+  header.height=26;header.eachCell(c=>{c.font={name:'Yu Gothic',bold:true,color:{argb:'FFFFFFFF'}};c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF345B87'}};c.alignment={vertical:'middle',horizontal:'center'};});
+  for(const [i,{r,expected,likely,high}] of rows.entries()){
+   const row=sheet.addRow([r.business_date,r.store_name,r.machine_name,String(r.machine_number),r.games,r.bb,r.rb,r.diff_medals,r.max_hold,r.start_games,r.play_status,expected,likely,high]);
+   row.height=22;row.eachCell({includeEmpty:true},cell=>{cell.font={name:'Yu Gothic',size:10};cell.alignment={vertical:'middle'};if(i%2===1)cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF1F5FA'}};});
+   row.getCell(8).numFmt='+#,##0;-#,##0;0';row.getCell(12).numFmt='0.00';row.getCell(14).numFmt='0.0%';
+  }
+  sheet.columns.forEach((col,i)=>col.width=[15,22,24,12,14,10,10,14,14,12,14,14,14,18][i]);
+  sheet.autoFilter={from:'A2',to:'N'+(rows.length+2)};
+  const meta=book.addWorksheet('解析条件');meta.addRows([
+    ['エクスポート日時',new Date().toISOString()],['営業日フィルタ',date],['機種フィルタ',document.getElementById('comparisonMachine')?.value||'全機種'],
+    ['チェリー狙い割合',cherryAimShare/100],['推定について','等事前確率の暫定統計モデル。機種未登録は未推定。'],
+    ['集計キー','ユーザー・営業日・店舗・台番号（1台1行）']]);
+  meta.getCell('B4').numFmt='0%';meta.getColumn(1).width=25;meta.getColumn(2).width=75;
+  meta.getColumn(2).alignment={wrapText:true};meta.getRow(5).height=33;
+  const buffer=await book.xlsx.writeBuffer();const blob=new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const link=document.createElement('a');const url=URL.createObjectURL(blob);link.href=url;link.download='juggler-ranking-'+date+'.xlsx';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),15000);
+ }catch(e){alert('Excel出力に失敗しました: '+e.message);}finally{button.disabled=false;button.textContent='Excel出力';}
+}
+document.getElementById('rankExport')?.addEventListener('click',exportRankingExcel);
+
 $('comparisonSort').onchange=renderComparison;
 $('comparisonDate').onchange=renderComparison;
 $('comparisonMachine').onchange=renderComparison;
@@ -251,7 +320,28 @@ function applyShortcutMetadata(raw){
   if(isShortcut && (!store||!machine||!date))msg('importMessage','取得データに店舗・機種・営業日の一部がありません。ショートカットを更新してください。',true);
   return Boolean($('store').value.trim() && $('machine').value.trim() && $('businessDate').value);
 }
-$('rawData').addEventListener('input',()=>{pending=[];$('saveRows').disabled=true;applyShortcutMetadata($('rawData').value);});
+function normalizeSharedInput(){
+ const raw=$('rawData').value.trim();
+ if(!raw.includes('#ja06=') || !/^https?:\/\//i.test(raw))return true;
+ try{
+  const decoded=decodeSharedLinkText(raw);
+  $('rawData').value=decoded;
+  applyShortcutMetadata(decoded);
+  return true;
+ }catch(e){
+  msg('importMessage','共有URLの復元に失敗しました: '+e.message,true);
+  return false;
+ }
+}
+$('rawData').addEventListener('input',()=>{
+ pending=[];$('saveRows').disabled=true;
+ const raw=$('rawData').value.trim();
+ if(raw.startsWith('https://') && raw.includes('#ja06=')){
+  if(normalizeSharedInput())queueMicrotask(()=>$('preview').click());
+  return;
+ }
+ applyShortcutMetadata($('rawData').value);
+});
 $('pasteClipboard').onclick=async()=>{
  try{const raw=await navigator.clipboard.readText();if(!raw.trim())throw Error('クリップボードが空です');
  if(raw.length>1000000)throw Error('読み込むデータが大きすぎます');
@@ -260,7 +350,7 @@ $('pasteClipboard').onclick=async()=>{
 };
 $('openTeramoba').onclick=()=>window.open('https://nobuta.pt.teramoba2.com/lightshinshigai/rack_info','_blank','noopener,noreferrer');
 $('importFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>1024*1024){msg('importMessage','ファイルは1MB以下にしてください',true);return;}$('rawData').value=await f.text();applyShortcutMetadata($('rawData').value);};
-$('preview').onclick=()=>{pending=[];$('saveRows').disabled=true;applyShortcutMetadata($('rawData').value);const store=$('store').value.trim(),machine=$('machine').value.trim(),date=$('businessDate').value;if(!store||!machine||!date){msg('importMessage','店舗・機種・営業日を入力してください',true);return;}try{pending=parseInput($('rawData').value);if(!pending.length)throw Error('台データがありません');const seen=new Set();for(const r of pending){if(seen.has(r.machine_number)){r.valid=false;r.issue='同じ台番号が複数あります';}seen.add(r.machine_number);}const tbody=$('previewRows');tbody.replaceChildren();for(const r of pending){const tr=document.createElement('tr');for(const value of [r.machine_number,r.games,r.bb,r.rb,signed(r.diff_medals),displayOptional(r.max_hold),displayOptional(r.start_games),displayOptional(r.play_status),r.issue]){const td=document.createElement('td');td.textContent=String(value);tr.append(td);}tbody.appendChild(tr);}$('saveRows').disabled=pending.some(r=>!r.valid);msg('importMessage',`${pending.length}件読み取りました。${pending.filter(r=>!r.valid).length}件に確認が必要です。`,pending.some(r=>!r.valid));}catch(e){msg('importMessage',e.message,true);}};
+$('preview').onclick=()=>{pending=[];$('saveRows').disabled=true;if(!normalizeSharedInput())return;applyShortcutMetadata($('rawData').value);const store=$('store').value.trim(),machine=$('machine').value.trim(),date=$('businessDate').value;if(!store||!machine||!date){msg('importMessage','店舗・機種・営業日を入力してください',true);return;}try{pending=parseInput($('rawData').value);if(!pending.length)throw Error('台データがありません');const seen=new Set();for(const r of pending){if(seen.has(r.machine_number)){r.valid=false;r.issue='同じ台番号が複数あります';}seen.add(r.machine_number);}const tbody=$('previewRows');tbody.replaceChildren();for(const r of pending){const tr=document.createElement('tr');for(const value of [r.machine_number,r.games,r.bb,r.rb,signed(r.diff_medals),displayOptional(r.max_hold),displayOptional(r.start_games),displayOptional(r.play_status),r.issue]){const td=document.createElement('td');td.textContent=String(value);tr.append(td);}tbody.appendChild(tr);}$('saveRows').disabled=pending.some(r=>!r.valid);msg('importMessage',`${pending.length}件読み取りました。${pending.filter(r=>!r.valid).length}件に確認が必要です。`,pending.some(r=>!r.valid));}catch(e){msg('importMessage',e.message,true);}};
 $('saveRows').onclick=async()=>{
  if(!pending.length||pending.some(r=>!r.valid)||!user)return;
  const store=$('store').value.trim(),machine=$('machine').value.trim(),date=$('businessDate').value;
