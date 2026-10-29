@@ -252,6 +252,27 @@ function render(){text($('userLabel'),user?.email||'');text($('metricRecords'),r
  $('analysisModel').innerHTML='<option value="">機種モデルを選択</option>'+models.map(m=>`<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('');
  $('modelList').innerHTML='<h3>保存済みモデル</h3>'+(models.length?models.map(m=>`<div class="model-entry"><b>${esc(m.name)}</b><div class="hint">${esc(({official:'公式公表値',estimated:'推定・解析値',manual:'個人入力'})[m.source_type]||m.source_type)} · 確認日 ${esc(m.checked_on||'未設定')}</div>${m.source_url?`<a href="${esc(m.source_url)}" target="_blank" rel="noopener noreferrer">出典リンク</a>`:''}</div>`).join(''):'未登録');
 }
+// The reference is calculated from saved records on the preceding 7 calendar days.
+// It is an activity benchmark, NOT the probability that a setting prediction is correct.
+function rollingMaxReference(targetDate,storeName){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(targetDate))return null;
+ const start=new Date(targetDate+'T12:00:00Z');
+ if(Number.isNaN(start.getTime()))return null;
+ const permitted=new Set();
+ for(let d=1;d<=7;d++){
+  const dt=new Date(start.getTime()-d*86400000);
+  permitted.add(dt.toISOString().slice(0,10));
+ }
+ const maxima=new Map();
+ for(const r of records){
+  if(!permitted.has(r.business_date)|| (storeName && r.store_name!==storeName))continue;
+  const games=Number(r.games);
+  if(!Number.isFinite(games)||games<=0)continue;
+  maxima.set(r.business_date,Math.max(maxima.get(r.business_date)||0,games));
+ }
+ const daily=[...maxima.values()];
+ return daily.length?{reference:daily.reduce((a,b)=>a+b,0)/daily.length,days:daily.length}:null;
+}
 function renderComparison(){
  const body=$('compareRows');if(!body)return;body.replaceChildren();
  const date=$('comparisonDate')?.value||[...new Set(records.map(r=>r.business_date))].sort().reverse()[0]||'',machine=$('comparisonMachine')?.value||'';
@@ -276,15 +297,45 @@ function renderComparison(){
   if(key==='games')return (b.r.games||0)-(a.r.games||0);
   return (b.r.diff_medals??-Infinity)-(a.r.diff_medals??-Infinity);
  });
+ // Each x.expected is already Σ(setting × posterior probability); average across filtered records.
  // Summary follows the selected date, model, and ranking filter. Unestimated records are excluded.
  const estimatedRows=visible.filter(x=>Number.isFinite(x.expected));
  const sum=estimatedRows.reduce((total,x)=>total+x.expected,0);
  const average=estimatedRows.length?sum/estimatedRows.length:null;
+ // A benchmark derived only from preceding days; no look-ahead from the target day.
+ // With a mixed-store view, compute each store’s benchmark separately.
+ const validForWeight=estimatedRows.filter(x=>Number(x.r.games)>0);
+ const references=new Map();
+ for(const x of validForWeight){
+  const store=x.r.store_name||'';
+  const targetDate=x.r.business_date;
+  const k=store+'|'+targetDate;
+  if(!references.has(k))references.set(k,rollingMaxReference(targetDate,store));
+ }
+ let weightedSum=0,weightTotal=0,benchmarkCount=0;
+ const referenceDays=[];
+ for(const x of validForWeight){
+  const ref=references.get((x.r.store_name||'')+'|'+x.r.business_date);
+  if(!ref)continue;
+  // Cap at 100%; this is a heuristic weight, not a calibrated reliability score.
+  const weight=Math.min(1,Number(x.r.games)/ref.reference);
+  weightedSum+=x.expected*weight;weightTotal+=weight;benchmarkCount++;
+  referenceDays.push(ref.days);
+ }
+ const activityAverage=weightTotal>0?weightedSum/weightTotal:null;
+ const activitySummary=$('rankActivityAverage');
+ if(activitySummary){
+  activitySummary.querySelector('[data-activity-average]').textContent=activityAverage===null?'算出不可':activityAverage.toFixed(2);
+  activitySummary.querySelector('[data-activity-count]').textContent=activityAverage===null?'前7日間の履歴が必要':`基準あり ${benchmarkCount}台 / 推定可能 ${estimatedRows.length}台`;
+  activitySummary.querySelector('[data-activity-note]').textContent=activityAverage===null
+   ?'選択した営業日の前7日間に、同じ店舗の保存データがありません。7日分が蓄積されると比較できます。'
+   :`各台の重み＝min(1, 回転数÷前7日間の日別最大回転数平均)。基準日数 ${Math.min(...referenceDays)}〜${Math.max(...referenceDays)}日／最大7日。高稼働台を重視する参考平均で、設定推定の正解率ではありません。`;
+ }
  const summary=$('rankSettingAverage');
  if(summary){
   summary.querySelector('[data-average-value]').textContent=average===null?'算出不可':average.toFixed(2);
   summary.querySelector('[data-average-count]').textContent=`推定可能 ${estimatedRows.length}台 / 表示対象 ${visible.length}台`;
-  summary.querySelector('[data-average-note]').textContent=estimatedRows.length?'推定設定値の単純平均（設定1〜6）。未推定の台を除外。':'対象となる推定済み台がありません。';
+  summary.querySelector('[data-average-note]').textContent=estimatedRows.length?'各台の設定1〜6の推定確率から算出した期待設定値の全台平均。未推定の台を除外。':'対象となる推定済み台がありません。';
  }
  for(const {r,high,expected,likely} of visible.slice(0,500)){
   const tr=document.createElement('tr');
