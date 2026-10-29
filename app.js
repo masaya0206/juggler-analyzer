@@ -26,10 +26,81 @@ async function seedKnownModels(){
  const {error}=await db.from('machine_models').upsert(payload,{onConflict:'user_id,name',ignoreDuplicates:true});
  if(error)console.warn('カタログ登録保留:',error.message);
 }
+// Advanced source-audited draft: only My Juggler V. The remaining catalog entries are BB/RB-only until verified role profiles exist.
+const ADVANCED_V1={
+ name:'マイジャグラーV',version:'myv-draft-20261029',source:'https://nana-press.com/kaiseki/machine/191/6660/',
+ grape:[5.900,5.855,5.825,5.790,5.770,5.670],
+ cherry:[38.43,38.29,37.04,35.89,35.82,35.79],
+ cherryBB:[1418.43,1406.46,1393.39,1297.56,1210.64,1165.49],
+ cherryRB:[1091.69,1094.48,1046.38,1026.68,888.35,759.10],
+ replay:7.298, bbPayout:240,rbPayout:96
+};
+const aimCapture=()=>Math.min(1,Math.max(0,(cherryAimShare/100)*.98+(1-cherryAimShare/100)*.667));
+const gaussLog=(x,mu,variance)=>-0.5*(Math.log(2*Math.PI*Math.max(variance,1e-8))+(x-mu)**2/Math.max(variance,1e-8));
+const normalCDF=x=>{let t=1/(1+.2316419*Math.abs(x));let d=.3989422804*Math.exp(-x*x/2);let y=1-d*t*(.319381530+t*(-.356563782+t*(1.781477937+t*(-1.821255978+t*1.330274429))));return x>=0?y:1-y;};
+function analyzeStat(r,model){
+ if(!r.games||r.bb+r.rb>r.games)throw Error('総回転数/ボーナス回数が不正です');
+ const profile=catalogFor(r.machine_name)?.name===ADVANCED_V1.name?ADVANCED_V1:null;
+ const B=r.bb,R=r.rb,N=r.games,D=r.diff_medals;
+ const entries=model.settings.map((row,i)=>{
+  const pb=1/row.bb,pr=1/row.rb,pnone=1-pb-pr;
+  if(!(pb>0&&pr>0&&pnone>0))throw Error('機種の確率データが不正です');
+  const bonusLog=B*Math.log(pb)+R*Math.log(pr)+(N-B-R)*Math.log(pnone);
+  if(!profile||D===null||D===undefined){return {setting:i+1,log:bonusLog,bonusLog,mu:null,sd:null,overallMu:null,overallSd:null};}
+  const pc=1/profile.cherry[i],pg=1/profile.grape[i],preplay=1/profile.replay;
+  const pbc=1/profile.cherryBB[i],prc=1/profile.cherryRB[i];
+  const free=1-pb-pr,cap=aimCapture();
+  // Remaining non-bonus spins must be allocated by conditional probabilities; bonus/cherry overlapping events occur on bonus spins.
+  const cNon=Math.max(0,pc-pbc-prc)/free;
+  const grape=pg/free,replay=preplay/free;
+  const cherryWin=cNon*cap;
+  const meanOther=cherryWin+8*grape+3*replay;
+  const varOther=cherryWin+64*grape+9*replay-meanOther**2;
+  const cherryOnBonus=cap*(B*pbc/pb+R*prc/pr);
+  const cherryOnBonusVar=B*(cap*pbc/pb)*(1-cap*pbc/pb)+R*(cap*prc/pr)*(1-cap*prc/pr);
+  const mu=profile.bbPayout*B+profile.rbPayout*R-3*N+(N-B-R)*meanOther+cherryOnBonus;
+  const variance=Math.max(1,(N-B-R)*varOther+cherryOnBonusVar);
+  const overallReward=240*pb+96*pr+cap*pc+8*pg+3*preplay;
+  const overallSecond=240**2*pb+96**2*pr+cap*pc+64*pg+9*preplay+2*cap*(240*pbc+96*prc);
+  const overallMu=N*(overallReward-3),overallSd=Math.sqrt(Math.max(1,N*(overallSecond-overallReward**2)));
+  // Discrete medal outcomes: normal density approximates the conditional small-role distribution, not exact likelihood.
+  const diffLog=gaussLog(D,mu,variance);
+  return {setting:i+1,log:bonusLog+diffLog,bonusLog,mu,sd:Math.sqrt(variance),overallMu,overallSd};
+ });
+ const max=Math.max(...entries.map(x=>x.log)),unnormalized=entries.map(x=>Math.exp(x.log-max)),sum=unnormalized.reduce((a,b)=>a+b,0);
+ return {profile,entries:entries.map((x,i)=>({...x,prob:unnormalized[i]/sum})),mode:profile&&D!==null&&D!==undefined?'bonus+medals':'bonus-only'};
+}
+function plotAnalysis(r,result){
+ const N=r.games||1,D=r.diff_medals;
+ const width=960,height=480,margin={left:75,right:20,top:25,bottom:53};
+ const domain=[...result.entries.flatMap(e=>e.overallMu===null?[]:[e.overallMu-1.96*e.overallSd,e.overallMu+1.96*e.overallSd]),D??0,0];
+ const ymin=Math.min(...domain)*1.15-100,ymax=Math.max(...domain)*1.15+100;
+ const X=x=>margin.left+(width-margin.left-margin.right)*x/N;
+ const Y=y=>height-margin.bottom-(height-margin.bottom-margin.top)*(y-ymin)/(ymax-ymin);
+ const colors=['#94a3b8','#60a5fa','#34d399','#eab308','#fb923c','#a78bfa'];
+ let paths='';
+ for(const [i,e] of result.entries.entries()){
+  if(e.overallMu===null)continue;
+  const avg=e.overallMu,band=1.96*e.overallSd;
+  const points=[];for(let t=0;t<=50;t++){const ratio=t/50;points.push([X(N*ratio),Y(avg*ratio),Y(avg*ratio+band*Math.sqrt(ratio)),Y(avg*ratio-band*Math.sqrt(ratio))]);}
+  const poly=[...points.map(z=>`${z[0]},${z[2]}`),...points.slice().reverse().map(z=>`${z[0]},${z[3]}`)].join(' ');
+  paths+=`<polygon points="${poly}" fill="${colors[i]}" fill-opacity=".10"/><polyline points="${points.map(z=>`${z[0]},${z[1]}`).join(' ')}" fill="none" stroke="${colors[i]}" stroke-width="3"/>`;
+ }
+ if(D!==null&&D!==undefined)paths+=`<line x1="${X(0)}" y1="${Y(0)}" x2="${X(N)}" y2="${Y(D)}" stroke="#ef4444" stroke-width="4"/><circle cx="${X(N)}" cy="${Y(D)}" r="5" fill="#ef4444"/>`;
+ let bands='';if(result.mode==='bonus+medals')for(const [i,e] of result.entries.entries()){
+  bands+=`<line x1="${X(N)-12+i*4}" x2="${X(N)-12+i*4}" y1="${Y(e.mu-1.96*e.sd)}" y2="${Y(e.mu+1.96*e.sd)}" stroke="${colors[i]}" stroke-width="4" opacity=".9"/>`;
+ }
+ const ticks=Array.from({length:5},(_,i)=>ymin+(ymax-ymin)*i/4).map(v=>`<text x="${margin.left-8}" y="${Y(v)+4}" text-anchor="end" font-size="16" fill="currentColor">${Math.round(v).toLocaleString('ja-JP')}</text><line x1="${margin.left}" x2="${width-margin.right}" y1="${Y(v)}" y2="${Y(v)}" stroke="currentColor" stroke-opacity=".12"/>`).join('');
+ return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="設定別理論差枚95%予測範囲と実測直線" style="width:100%;height:auto;max-width:100%;background:rgba(120,120,120,.04);border-radius:12px"><text x="${margin.left}" y="18" font-size="16" fill="currentColor">差枚（枚）</text>${ticks}<line x1="${margin.left}" x2="${width-margin.right}" y1="${Y(0)}" y2="${Y(0)}" stroke="currentColor" stroke-opacity=".4"/>${paths}${bands}<text x="${margin.left}" y="${height-18}" fill="currentColor" font-size="16">0</text><text x="${X(N)}" y="${height-18}" text-anchor="end" fill="currentColor" font-size="16">${N.toLocaleString('ja-JP')}G</text></svg><p class="hint">赤線：実測差枚を原点と結んだ補助線（途中経過ではありません）。色線・淡色帯：設定1〜6の理論平均と約95%範囲。右端の短い縦線：BB/RB固定時の予測範囲。順に設定1（灰）・2（青）・3（緑）・4（黄）・5（橙）・6（紫）。</p>`;
+}
 function inferenceMetrics(r){const m=modelFor(r.machine_name);if(!m)return {model:null,high:null,expected:null,likely:null};try{const ps=infer(r,m);return {model:m,high:ps.filter(p=>Number(p.setting)>=4).reduce((v,p)=>v+p.prob,0),expected:ps.reduce((v,p)=>v+Number(p.setting)*p.prob,0),likely:ps.reduce((a,b)=>a.prob>=b.prob?a:b).setting};}catch{return {model:m,high:null,expected:null,likely:null};}}
 
 const config=window.APP_CONFIG||{};
 let db=null, user=null, records=[], models=[], pending=[], membership=null, initialized=false;
+const SETTINGS_KEY='juggler-cherry-aim-v1';let cherryAimShare=Math.max(0,Math.min(100,Number(localStorage.getItem(SETTINGS_KEY)??50)||0));
+const uniqueKey=r=>[r.user_id||user?.id||'',r.business_date, String(r.store_name||'').trim().normalize('NFKC'), String(r.machine_number||'').trim().normalize('NFKC')].join('\u001f');
+function uniqueRecords(items){const map=new Map();for(const r of items){const key=uniqueKey(r),old=map.get(key);if(!old||((Date.parse(r.imported_at)||0)>(Date.parse(old.imported_at)||0))||((Date.parse(r.imported_at)||0)===(Date.parse(old.imported_at)||0)&&(r.games||0)>(old.games||0)))map.set(key,r);}return [...map.values()];}
+
 // Safari share handoff. Payload stays in the URL fragment (never in HTTP requests).
 // Remove it from address/history immediately; parse only after authenticated sign-in.
 let incomingShare=null;
@@ -146,7 +217,7 @@ $('comparisonSort').onchange=renderComparison;
 $('comparisonDate').onchange=renderComparison;
 $('comparisonMachine').onchange=renderComparison;
 for(const id of ['store','machine','businessDate']) $(id).addEventListener('input',()=>{pending=[];$('saveRows').disabled=true;});
-async function reload(){if(!user)return;const [a,b]=await Promise.all([db.from('machine_records').select('*').order('business_date',{ascending:false}).limit(1000),db.from('machine_models').select('*').order('name')]);if(a.error||b.error){alert('データ取得失敗: '+(a.error?.message||b.error?.message));return;}records=a.data||[];models=b.data||[];render();}
+async function reload(){if(!user)return;const [a,b]=await Promise.all([db.from('machine_records').select('*').order('business_date',{ascending:false}).limit(1000),db.from('machine_models').select('*').order('name')]);if(a.error||b.error){alert('データ取得失敗: '+(a.error?.message||b.error?.message));return;}records=uniqueRecords(a.data||[]);models=b.data||[];render();}
 async function publicState(){const {data,error}=await db.rpc('app_public_state');if(error)throw Error('認証用SQLが未適用です: '+error.message);initialized=Boolean(data?.initialized);}
 function registerView(){const query=new URLSearchParams(location.search),invite=query.get('invite');$('setupCodeField').classList.toggle('hidden',!!invite||initialized);$('setupCode').required=!invite&&!initialized;$('registerTitle').textContent=invite?'招待アカウント登録':initialized?'招待が必要です':'最高管理者の初回登録';$('registerHelp').textContent=invite?'招待されたメールアドレスを入力してください。':initialized?'管理者が発行した招待URLから登録してください。':'SQL設定時に指定した初回セットアップコードを入力してください。';$('registerForm').classList.toggle('hidden',initialized&&!invite);show('register');}
 async function init(){if(!config.supabaseUrl||!config.supabasePublishableKey){show('setup');return;}try{db=createClient(config.supabaseUrl,config.supabasePublishableKey,{auth:{persistSession:true,autoRefreshToken:true}});await publicState();const {data}=await db.auth.getUser();await sync(data?.user||null);db.auth.onAuthStateChange((_event,session)=>{const id=session?.user?.id||null;if(id!==(user?.id||null))setTimeout(()=>sync(session?.user||null),0);});}catch(e){show('setup');$('setup').insertAdjacentHTML('beforeend',`<p class="message error">${esc(e.message)}</p>`);}}
@@ -194,14 +265,14 @@ $('saveRows').onclick=async()=>{
  if(!pending.length||pending.some(r=>!r.valid)||!user)return;
  const store=$('store').value.trim(),machine=$('machine').value.trim(),date=$('businessDate').value;
  if(!store||!machine||!/^\d{4}-\d{2}-\d{2}$/.test(date)){msg('importMessage','店舗・機種・営業日を確認してください',true);return;}
- const rows=pending.map(r=>({user_id:user.id,business_date:date,store_name:store,machine_name:effectiveMachineName(machine),machine_number:r.machine_number,games:r.games,bb:r.bb,rb:r.rb,diff_medals:r.diff_medals,max_hold:r.max_hold,start_games:r.start_games,play_status:r.play_status}));
+ const rows=pending.map(r=>({user_id:user.id,business_date:date,store_name:store,machine_name:effectiveMachineName(machine),machine_number:r.machine_number,games:r.games,bb:r.bb,rb:r.rb,diff_medals:r.diff_medals,max_hold:r.max_hold,start_games:r.start_games,play_status:r.play_status,imported_at:new Date().toISOString()}));
  $('saveRows').disabled=true;msg('importMessage',`${rows.length}件を保存しています…`);
  try{
-  // Upsert is idempotent for the same user/date/store/machine/number.
+  // Upsert uniquely by user/date/store/number, including machine-name corrections.
   // Write in small batches to avoid large payloads, while reporting partial failure explicitly.
   let saved=0;
   for(let i=0;i<rows.length;i+=100){
-   const {error}=await db.from('machine_records').upsert(rows.slice(i,i+100),{onConflict:'user_id,business_date,store_name,machine_name,machine_number'});
+   const {error}=await db.from('machine_records').upsert(rows.slice(i,i+100),{onConflict:'user_id,business_date,store_name,machine_number'});
    if(error)throw Error(`${saved}件保存後、続きの登録に失敗: ${error.message}`);
    saved+=Math.min(100,rows.length-i);
   }
@@ -216,6 +287,18 @@ $('saveRows').onclick=async()=>{
 $('saveModel').onclick=async()=>{const name=$('modelName').value.trim();const settings=[];for(let i=1;i<=6;i++)settings.push({setting:i,bb:Number($('bb'+i).value),rb:Number($('rb'+i).value)});if(!name||settings.some(s=>!Number.isFinite(s.bb)||!Number.isFinite(s.rb)||s.bb<=1||s.rb<=1)){msg('modelMessage','名前と設定1〜6のBB・RB分母（1より大きい数）をすべて入力してください',true);return;}const source_url=$('modelSource').value.trim()||null;if($('modelType').value!=='manual'&&!source_url){msg('modelMessage','公式値・解析値を登録するときは出典URLが必要です',true);return;}const {error}=await db.from('machine_models').upsert({user_id:user.id,name,source_type:$('modelType').value,source_url,checked_on:$('modelChecked').value||null,settings},{onConflict:'user_id,name'});if(error)msg('modelMessage',error.message,true);else{msg('modelMessage','モデルを保存しました');await reload();}};
 // Independent binomial terms: BB occurs with pBB per game and RB with pRB per game.
 // Treat categories as mutually exclusive, using multinomial likelihood (constant omitted).
-function infer(record,model){if(!record.games||record.bb+record.rb>record.games)throw Error('回転数またはボーナス回数に誤りがあります');const logs=model.settings.map(x=>{const a=1/x.bb,b=1/x.rb,c=1-a-b;if(a<=0||b<=0||c<=0)throw Error('確率モデルが不正です');return record.bb*Math.log(a)+record.rb*Math.log(b)+(record.games-record.bb-record.rb)*Math.log(c);});if(logs.length!==6)throw Error('設定1〜6のデータが必要です');const max=Math.max(...logs),exp=logs.map(v=>Math.exp(v-max)),sum=exp.reduce((a,b)=>a+b,0);return exp.map((v,i)=>({setting:model.settings[i].setting,prob:v/sum}));}
-$('runAnalysis').onclick=()=>{const r=records.find(x=>x.id===$('analysisRecord').value),m=models.find(x=>x.id===$('analysisModel').value);if(!r||!m){msg('analysisMessage','台データと機種モデルを選択してください',true);return;}if(effectiveMachineName(r.machine_name)!==effectiveMachineName(m.name)){msg('analysisMessage','警告：台データとモデルの機種名が一致していません。分析を中止しました。',true);return;}try{const probs=infer(r,m),max=Math.max(...probs.map(x=>x.prob));$('analysisOutput').innerHTML=`<p><b>${esc(r.machine_name)} ${esc(r.machine_number)}番台</b> · ${r.games}G · BB ${r.bb} · RB ${r.rb} · 差枚 ${signed(r.diff_medals)} · 最大持玉 ${displayOptional(r.max_hold)} · 現在スタート ${displayOptional(r.start_games)} · 状態 ${esc(displayOptional(r.play_status))}</p><p class="warning">確率はモデルと等事前確率を仮定した相対値です。設定の真の確率や勝率ではありません。</p>`+probs.map(x=>`<div class="prob-row"><b>設定${x.setting}</b><div class="bar"><div class="fill" style="width:${Math.max(0,x.prob*100)}%"></div></div><b>${(x.prob*100).toFixed(1)}%</b></div>`).join('')+`<p class="hint">モデル：${esc(m.source_type)}／確認日：${esc(m.checked_on||'未設定')}。差枚は参考情報であり、この推定確率には直接加えていません。少ないG数では判断が不安定です。</p>`;msg('analysisMessage','分析しました');}catch(e){msg('analysisMessage',e.message,true);}};
+function infer(record,model){return analyzeStat(record,model).entries.map(e=>({setting:e.setting,prob:e.prob}));}
+$('runAnalysis').onclick=()=>{
+ const r=records.find(x=>x.id===$('analysisRecord').value),m=models.find(x=>x.id===$('analysisModel').value);
+ if(!r||!m){msg('analysisMessage','台データと機種モデルを選択してください',true);return;}
+ if(effectiveMachineName(r.machine_name)!==effectiveMachineName(m.name)){msg('analysisMessage','台の機種とモデルが一致しません',true);return;}
+ try{
+  const result=analyzeStat(r,m),ps=result.entries,high=ps.filter(x=>x.setting>=4).reduce((a,x)=>a+x.prob,0),mean=ps.reduce((a,x)=>a+x.setting*x.prob,0);
+  const chart=result.profile?plotAnalysis(r,result):'<p class="warning">小役確率・重複確率の検証済みモデルが未登録のため、現在はボーナス回数のみで推定します。差枚分布は表示しません。</p>';
+  $('analysisOutput').innerHTML=`<h3>${esc(r.business_date)} ${esc(r.store_name)} ${esc(r.machine_name)} ${esc(r.machine_number)}番台</h3><p>${r.games}G · BB ${r.bb} · RB ${r.rb} · 差枚 ${signed(r.diff_medals)}</p><p><b>推定設定値 ${mean.toFixed(2)} / 設定4以上 ${(100*high).toFixed(1)}%</b></p>`+chart+ps.map(x=>`<div class="prob-row"><b>設定${x.setting}</b><div class="bar"><div class="fill" style="width:${(100*x.prob).toFixed(2)}%"></div></div><b>${(100*x.prob).toFixed(1)}%</b></div>`).join('')+`<p class="hint">方式：${result.mode==='bonus+medals'?'BB/RB＋条件付き差枚（正規近似）':'BB/RBのみ'}。${result.profile?'小役モデル版：'+esc(result.profile.version)+'　出典：'+esc(result.profile.source):''}　チェリー狙い割合：${cherryAimShare}% ／ 平均取得率：${(100*aimCapture()).toFixed(2)}%。等事前確率の相対推定であり実設定の保証ではありません。モデルの未検証部分があります。</p>`;
+  msg('analysisMessage','分析しました');
+ }catch(e){msg('analysisMessage',e.message,true);}
+};
+const aimControl=$('cherryAimShare');if(aimControl){aimControl.value=cherryAimShare;$('cherryAimValue').textContent=cherryAimShare+'%';aimControl.addEventListener('input',()=>{cherryAimShare=Number(aimControl.value);$('cherryAimValue').textContent=cherryAimShare+'%';localStorage.setItem(SETTINGS_KEY,String(cherryAimShare));renderComparison();if($('analysisRecord').value&&$('analysisModel').value)$('runAnalysis').click();});}
+
 init();
