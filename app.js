@@ -22,7 +22,7 @@ const normalizeMachine=s=>String(s||'').normalize('NFKC').toLowerCase()
 function catalogFor(s){const key=normalizeMachine(s);return CURATED_CATALOG.find(m=>[m.name,...m.aliases].some(a=>normalizeMachine(a)===key))||null;}
 function modelFor(s){
  const entry=catalogFor(s);
- if(entry?.name==='マイジャグラーVI')return null; // Unverified VI data in older catalog copied V values; do not misclassify.
+ // VI and V have equal published BB/RB rates, but their small-role profiles remain separate.
  const canonical=normalizeMachine(entry?.name||s);
  // Users may already have saved a model under an older Teramoba type name.
  return models.find(m=>normalizeMachine(m.name)===canonical)
@@ -32,7 +32,7 @@ function modelFor(s){
 function effectiveMachineName(s){return catalogFor(s)?.name||s;}
 async function seedKnownModels(){
  if(!user)return;
- const missing=CURATED_CATALOG.filter(c=>c.name!=='マイジャグラーVI'&&!models.some(m=>catalogFor(m.name)?.name===c.name));
+ const missing=CURATED_CATALOG.filter(c=>!models.some(m=>catalogFor(m.name)?.name===c.name));
  if(!missing.length)return;
  const payload=missing.map(c=>({user_id:user.id,name:c.name,source_type:'estimated',source_url:c.url,checked_on:CATALOG_CHECKED,settings:c.bb.map((bb,i)=>({setting:i+1,bb,rb:c.rb[i],payout:c.payout?.[i]??null}))}));
  const {error}=await db.from('machine_models').upsert(payload,{onConflict:'user_id,name',ignoreDuplicates:true});
@@ -69,6 +69,39 @@ const ROLE_PROFILES={
   version:'funky2-grape-estimate-20261029',source:'https://slometer.com/tools/juggler/funky-2/',
   grape:[5.94,5.92,5.88,5.83,5.76,5.67],replay:7.298,
   bbPayout:240,rbPayout:96,grapePayout:8,verifiedOverlap:false
+ }
+
+ , 'ハッピージャグラーVⅢ':{
+  version:'happy-v3-nanapress-app-sample-20261029',source:'https://nana-press.com/kaiseki/machine/445/11637/',
+  grape:[6.07,6.03,6.00,5.86,5.84,5.80],
+  // non-bonus cherries published separately; the total below includes cherry/bonus overlap
+  cherry:[55.5,55.5,55.5,55.5,55.5,55.5],
+  cherryBB:[1149.75,1149.75,1074.36,992.97,949.8,936.23],
+  cherryRB:[1057.03,992.97,885.62,809.09,728.18,642.51],
+  replay:7.3,bbPayout:240,rbPayout:96,cherryPayout:2,grapePayout:8,verifiedOverlap:true
+ },
+ 'ウルトラミラクルジャグラー':{
+  version:'ultra-miracle-pachinavi-20261029',source:'https://pachinavi.net/machines/ultra-miracle-juggler/settei/',
+  grape:[5.94,5.94,5.94,5.93,5.93,5.93],
+  cherry:[35.5,35.5,34.9,34.8,34.1,33.4],
+  cherryBB:[1337.5,1213.6,1149.8,1110.8,993.0,936.2],
+  cherryRB:[1489.5,1524.1,1236.5,1236.5,1057,1040.3],
+  replay:7.298,bbPayout:240,rbPayout:96,cherryPayout:2,grapePayout:8,verifiedOverlap:true
+ },
+ 'ミスタージャグラー':{
+  version:'mrjuggler-pokoslot-20261029',source:'https://www.nankaikoya.jp/mrjuggler/',
+  grape:[6.29,6.22,6.15,6.09,6.02,5.96],
+  cherry:[37.2,37.2,37.2,37.2,37.2,37.2],
+  cherryBB:[1689,1682,1655,1508,1410,1385],
+  cherryRB:[1621,1600,1503,1412,1357,1331],
+  replay:7.298,bbPayout:240,rbPayout:96,cherryPayout:2,grapePayout:8,
+  // Additional pierrot+bonus overlap is not yet represented in the likelihood.
+  verifiedOverlap:false
+ },
+ 'ジャグラーガールズSS':{
+  version:'girls-ss-pekasen-inferred-20261029',source:'https://pekasen.com/machines/juggler-girls-ss',
+  grape:[6.01,6.01,6.01,6.01,5.92,5.89],
+  replay:7.298,bbPayout:240,rbPayout:96,grapePayout:8,verifiedOverlap:false
  }
 };
 const aimCapture=()=>Math.min(1,Math.max(0,(cherryAimShare/100)*.98+(1-cherryAimShare/100)*.667));
