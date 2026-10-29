@@ -276,6 +276,16 @@ function renderComparison(){
   if(key==='games')return (b.r.games||0)-(a.r.games||0);
   return (b.r.diff_medals??-Infinity)-(a.r.diff_medals??-Infinity);
  });
+ // Summary follows the selected date, model, and ranking filter. Unestimated records are excluded.
+ const estimatedRows=visible.filter(x=>Number.isFinite(x.expected));
+ const sum=estimatedRows.reduce((total,x)=>total+x.expected,0);
+ const average=estimatedRows.length?sum/estimatedRows.length:null;
+ const summary=$('rankSettingAverage');
+ if(summary){
+  summary.querySelector('[data-average-value]').textContent=average===null?'算出不可':average.toFixed(2);
+  summary.querySelector('[data-average-count]').textContent=`推定可能 ${estimatedRows.length}台 / 表示対象 ${visible.length}台`;
+  summary.querySelector('[data-average-note]').textContent=estimatedRows.length?'推定設定値の単純平均（設定1〜6）。未推定の台を除外。':'対象となる推定済み台がありません。';
+ }
  for(const {r,high,expected,likely} of visible.slice(0,500)){
   const tr=document.createElement('tr');
   for(const [colIndex,v] of [r.business_date,r.machine_name,r.machine_number,r.games,r.bb,r.rb,signed(r.diff_medals),displayOptional(r.max_hold),displayOptional(r.start_games),displayOptional(r.play_status),expected===null?'未推定':expected.toFixed(2),likely===null?'未推定':'設定'+likely,high===null?'モデル未登録 / 判定不可':(high*100).toFixed(1)+'%'].entries()){
