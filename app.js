@@ -6,7 +6,7 @@ const CURATED_CATALOG=[
  {"name":"マイジャグラーV","aliases":["マイジャグラー5","マイジャグラーⅤ","SマイジャグラーVKD","SマイジャグラーⅤKD","マイジャグ5"],"url":"https://www.kitadenshi.co.jp/fun/","sourceType":"official","bb":[273.1,270.8,266.4,254,240.1,229.1],"rb":[409.6,385.5,336.1,290,268.6,229.1],"payout":[97,98,99.9,102.8,105.3,109.4]},
  {"name":"マイジャグラーVI","aliases":["マイジャグラー6","マイジャグラーⅥ","マイジャグVI","マイジャグ6"],"url":"https://www.kitadenshi.co.jp/fun/","sourceType":"official","bb":[273.1,270.8,266.4,254,240.1,229.1],"rb":[409.6,385.5,336.1,290,268.6,229.1],"payout":[97,98,99.9,102.8,105.3,109.4]},
  {"name":"アイムジャグラーEX","aliases":["SアイムジャグラーEX","アイムジャグラーＥＸ","SアイムジャグラーEX-TP","SアイムジャグラーEXTP","SアイムジャグラーEX-KK","SアイムジャグラーEXKK","アイムEX"],"url":"https://pachislot-memo.online/juggler-all","sourceType":"secondary","bb":[273.1,269.7,269.7,259,259,255],"rb":[439.8,399.6,331,315.1,255,255],"payout":[97,98,99.5,101.1,103.3,105.5]},
- {"name":"ネオアイムジャグラーEX","aliases":["ネオアイムジャグラー","ネオアイム","ネオアイムEX"],"url":"https://tsumoreru.com/machines/juggler_neo_im_ex/","sourceType":"secondary","bb":[273.1,269.7,269.7,259,259,255],"rb":[439.8,399.6,331,315.1,255,255],"payout":[97,98,99.5,101.1,103.3,105.5]},
+ {"name":"ネオアイムジャグラーEX","aliases":["ネオアイムジャグラー","ネオアイム","ネオアイムEX","SネオアイムジャグラーEX-KK","SネオアイムジャグラーEXKK","SネオアイムジャグラーEX"],"url":"https://tsumoreru.com/machines/juggler_neo_im_ex/","sourceType":"secondary","bb":[273.1,269.7,269.7,259,259,255],"rb":[439.8,399.6,331,315.1,255,255],"payout":[97,98,99.5,101.1,103.3,105.5]},
  {"name":"ゴーゴージャグラー3","aliases":["ゴーゴージャグラーⅢ","Sゴーゴージャグラー3","ゴージャグ3"],"url":"https://pachislot-memo.online/juggler-all","sourceType":"secondary","bb":[259,258,257,254,247.3,234.9],"rb":[354.2,332.7,306.2,268.6,247.3,234.9],"payout":[97.2,98.2,99.4,101.6,103.8,106.5]},
  {"name":"ファンキージャグラー2","aliases":["ファンキージャグラーⅡ","ファンキー2","ファンキー"],"url":"https://pachislot-memo.online/juggler-all","sourceType":"secondary","bb":[266.4,259,256,249.2,240.1,219.9],"rb":[439.8,407.1,366.1,322.8,299.3,262.1]},
  {"name":"ハッピージャグラーVⅢ","aliases":["ハッピージャグラーVIII","ハッピージャグラーV3","ハッピージャグラー3","ハッピー3"],"url":"https://pachislot-memo.online/juggler-all","sourceType":"secondary","bb":[273.1,270.8,263.2,254,239.2,226],"rb":[397.2,362.1,332.7,300.6,273.1,256]},
@@ -14,9 +14,9 @@ const CURATED_CATALOG=[
  {"name":"ウルトラミラクルジャグラー","aliases":["ウルトラミラクル","ミラクルジャグラー","ウルミラ"],"url":"https://pachislot-memo.online/juggler-all","sourceType":"secondary","bb":[267.5,261.1,256,242.7,233.2,216.3],"rb":[425.6,402.1,350.5,322.8,297.9,277.7]},
  {"name":"ミスタージャグラー","aliases":["ミスター","ミスタージャグ"],"url":"https://pachislot-memo.online/juggler-all","sourceType":"secondary","bb":[268.6,267.5,260.1,249.2,240.9,237.4],"rb":[374.5,354.2,331,291.3,257,237.4]},
 ];
-const normalizeMachine=s=>String(s||'').normalize('NFKC').toLowerCase().replace(/[\s　・_\-]/g,'').replace(/^(s|l)(?=[ァ-ヶ])/,'');
+const normalizeMachine=s=>String(s||'').normalize('NFKC').toLowerCase().replace(/[\s　・_\-]/g,'').replace(/^(s|l)(?=[ァ-ヶ])/,'').replace(/(kk|kd|tp)$/,'');
 function catalogFor(s){const key=normalizeMachine(s);return CURATED_CATALOG.find(m=>[m.name,...m.aliases].some(a=>normalizeMachine(a)===key))||null;}
-function modelFor(s){const entry=catalogFor(s);return models.find(m=>normalizeMachine(m.name)===normalizeMachine(entry?.name||s)||normalizeMachine(m.name)===normalizeMachine(s))||null;}
+function modelFor(s){const entry=catalogFor(s);const wanted=normalizeMachine(entry?.name||s);return models.find(m=>normalizeMachine(m.name)===wanted)||null;}
 function effectiveMachineName(s){return catalogFor(s)?.name||s;}
 async function seedKnownModels(){
  if(!user)return;
@@ -26,42 +26,71 @@ async function seedKnownModels(){
  const {error}=await db.from('machine_models').upsert(payload,{onConflict:'user_id,name',ignoreDuplicates:true});
  if(error)console.warn('カタログ登録保留:',error.message);
 }
-// Advanced source-audited draft: only My Juggler V. The remaining catalog entries are BB/RB-only until verified role profiles exist.
-const ADVANCED_V1={
- name:'マイジャグラーV',version:'myv-draft-20261029',source:'https://nana-press.com/kaiseki/machine/191/6660/',
- grape:[5.900,5.855,5.825,5.790,5.770,5.670],
- cherry:[38.43,38.29,37.04,35.89,35.82,35.79],
- cherryBB:[1418.43,1406.46,1393.39,1297.56,1210.64,1165.49],
- cherryRB:[1091.69,1094.48,1046.38,1026.68,888.35,759.10],
- replay:7.298, bbPayout:240,rbPayout:96
+// Model sources: BB/RB from curated machine catalog, grapes from cited analysis resources.
+// Where overlap probabilities are unverified, use a marginal-only provisional model:
+// means are additive; bonus/cherry covariance is not claimed to be exact.
+const ROLE_PROFILES={
+ 'マイジャグラーV':{
+  version:'myv-overlap-reference-20261029',source:'https://nana-press.com/kaiseki/machine/191/6660/',
+  grape:[5.900,5.855,5.825,5.790,5.770,5.670],
+  cherry:[38.43,38.29,37.04,35.89,35.82,35.79],
+  cherryBB:[1418.43,1406.46,1393.39,1297.56,1210.64,1165.49],
+  cherryRB:[1091.69,1094.48,1046.38,1026.68,888.35,759.10],
+  replay:7.298,bbPayout:240,rbPayout:96,cherryPayout:1,grapePayout:8,verifiedOverlap:true
+ },
+ 'アイムジャグラーEX':{
+  version:'im-grape-estimate-20261029',source:'https://pekasen.com/machines/neo-im-juggler-ex',
+  grape:[6.02,6.02,6.02,6.02,6.02,5.80],replay:7.298,
+  bbPayout:252,rbPayout:96,grapePayout:8,verifiedOverlap:false
+ },
+ 'ネオアイムジャグラーEX':{
+  version:'neo-im-grape-estimate-20261029',source:'https://pekasen.com/machines/neo-im-juggler-ex',
+  grape:[6.02,6.02,6.02,6.02,6.02,5.80],replay:7.298,
+  bbPayout:252,rbPayout:96,grapePayout:8,verifiedOverlap:false
+ },
+ 'ゴーゴージャグラー3':{
+  version:'gogo3-grape-estimate-20261029',source:'https://www.slo-map.com/juggler/budou/gogo-juggler-3',
+  grape:[6.25,6.20,6.15,6.07,6.00,5.92],replay:7.298,
+  bbPayout:240,rbPayout:96,grapePayout:8,verifiedOverlap:false
+ },
+ 'ファンキージャグラー2':{
+  version:'funky2-grape-estimate-20261029',source:'https://slometer.com/tools/juggler/funky-2/',
+  grape:[5.94,5.92,5.88,5.83,5.76,5.67],replay:7.298,
+  bbPayout:240,rbPayout:96,grapePayout:8,verifiedOverlap:false
+ }
 };
 const aimCapture=()=>Math.min(1,Math.max(0,(cherryAimShare/100)*.98+(1-cherryAimShare/100)*.667));
 const gaussLog=(x,mu,variance)=>-0.5*(Math.log(2*Math.PI*Math.max(variance,1e-8))+(x-mu)**2/Math.max(variance,1e-8));
 const normalCDF=x=>{let t=1/(1+.2316419*Math.abs(x));let d=.3989422804*Math.exp(-x*x/2);let y=1-d*t*(.319381530+t*(-.356563782+t*(1.781477937+t*(-1.821255978+t*1.330274429))));return x>=0?y:1-y;};
 function analyzeStat(r,model){
  if(!r.games||r.bb+r.rb>r.games)throw Error('総回転数/ボーナス回数が不正です');
- const profile=catalogFor(r.machine_name)?.name===ADVANCED_V1.name?ADVANCED_V1:null;
+ const profile=ROLE_PROFILES[catalogFor(r.machine_name)?.name]||null;
  const B=r.bb,R=r.rb,N=r.games,D=r.diff_medals;
  const entries=model.settings.map((row,i)=>{
   const pb=1/row.bb,pr=1/row.rb,pnone=1-pb-pr;
   if(!(pb>0&&pr>0&&pnone>0))throw Error('機種の確率データが不正です');
   const bonusLog=B*Math.log(pb)+R*Math.log(pr)+(N-B-R)*Math.log(pnone);
   if(!profile||D===null||D===undefined){return {setting:i+1,log:bonusLog,bonusLog,mu:null,sd:null,overallMu:null,overallSd:null};}
-  const pc=1/profile.cherry[i],pg=1/profile.grape[i],preplay=1/profile.replay;
-  const pbc=1/profile.cherryBB[i],prc=1/profile.cherryRB[i];
+  const pg=1/profile.grape[i],preplay=1/profile.replay;
   const free=1-pb-pr,cap=aimCapture();
-  // Remaining non-bonus spins must be allocated by conditional probabilities; bonus/cherry overlapping events occur on bonus spins.
+  const cPayout=profile.cherryPayout||0;
+  const pc=profile.cherry?1/profile.cherry[i]:0;
+  const pbc=profile.cherryBB?1/profile.cherryBB[i]:0;
+  const prc=profile.cherryRB?1/profile.cherryRB[i]:0;
   const cNon=Math.max(0,pc-pbc-prc)/free;
   const grape=pg/free,replay=preplay/free;
   const cherryWin=cNon*cap;
-  const meanOther=cherryWin+8*grape+3*replay;
-  const varOther=cherryWin+64*grape+9*replay-meanOther**2;
-  const cherryOnBonus=cap*(B*pbc/pb+R*prc/pr);
-  const cherryOnBonusVar=B*(cap*pbc/pb)*(1-cap*pbc/pb)+R*(cap*prc/pr)*(1-cap*prc/pr);
+  const gr=profile.grapePayout;
+  const meanOther=cPayout*cherryWin+gr*grape+3*replay;
+  const varOther=cPayout*cPayout*cherryWin+gr*gr*grape+9*replay-meanOther**2;
+  const cherryOnBonus=cPayout*cap*(B*pbc/pb+R*prc/pr);
+  const cherryOnBonusVar=cPayout*cPayout*(B*(cap*pbc/pb)*(1-cap*pbc/pb)+R*(cap*prc/pr)*(1-cap*prc/pr));
   const mu=profile.bbPayout*B+profile.rbPayout*R-3*N+(N-B-R)*meanOther+cherryOnBonus;
+  // Published grape probabilities are estimates, not exact slot internals.
+  // Unmodelled rare roles and bonus-entry effects cause further deviation.
   const variance=Math.max(1,(N-B-R)*varOther+cherryOnBonusVar);
-  const overallReward=240*pb+96*pr+cap*pc+8*pg+3*preplay;
-  const overallSecond=240**2*pb+96**2*pr+cap*pc+64*pg+9*preplay+2*cap*(240*pbc+96*prc);
+  const overallReward=profile.bbPayout*pb+profile.rbPayout*pr+cap*cPayout*pc+gr*pg+3*preplay;
+  const overallSecond=profile.bbPayout**2*pb+profile.rbPayout**2*pr+cap*cPayout*cPayout*pc+gr*gr*pg+9*preplay+2*cap*cPayout*(profile.bbPayout*pbc+profile.rbPayout*prc);
   const overallMu=N*(overallReward-3),overallSd=Math.sqrt(Math.max(1,N*(overallSecond-overallReward**2)));
   // Discrete medal outcomes: normal density approximates the conditional small-role distribution, not exact likelihood.
   const diffLog=gaussLog(D,mu,variance);
@@ -389,7 +418,7 @@ $('runAnalysis').onclick=()=>{
  try{
   const result=analyzeStat(r,m),ps=result.entries,high=ps.filter(x=>x.setting>=4).reduce((a,x)=>a+x.prob,0),mean=ps.reduce((a,x)=>a+x.setting*x.prob,0);
   const chart=result.profile?plotAnalysis(r,result):'<p class="warning">小役確率・重複確率の検証済みモデルが未登録のため、現在はボーナス回数のみで推定します。差枚分布は表示しません。</p>';
-  $('analysisOutput').innerHTML=`<h3>${esc(r.business_date)} ${esc(r.store_name)} ${esc(r.machine_name)} ${esc(r.machine_number)}番台</h3><p>${r.games}G · BB ${r.bb} · RB ${r.rb} · 差枚 ${signed(r.diff_medals)}</p><p><b>推定設定値 ${mean.toFixed(2)} / 設定4以上 ${(100*high).toFixed(1)}%</b></p>`+chart+ps.map(x=>`<div class="prob-row"><b>設定${x.setting}</b><div class="bar"><div class="fill" style="width:${(100*x.prob).toFixed(2)}%"></div></div><b>${(100*x.prob).toFixed(1)}%</b></div>`).join('')+`<p class="hint">方式：${result.mode==='bonus+medals'?'BB/RB＋条件付き差枚（正規近似）':'BB/RBのみ'}。${result.profile?'小役モデル版：'+esc(result.profile.version)+'　出典：'+esc(result.profile.source):''}　チェリー狙い割合：${cherryAimShare}% ／ 平均取得率：${(100*aimCapture()).toFixed(2)}%。等事前確率の相対推定であり実設定の保証ではありません。モデルの未検証部分があります。</p>`;
+  $('analysisOutput').innerHTML=`<h3>${esc(r.business_date)} ${esc(r.store_name)} ${esc(r.machine_name)} ${esc(r.machine_number)}番台</h3><p>${r.games}G · BB ${r.bb} · RB ${r.rb} · 差枚 ${signed(r.diff_medals)}</p><p><b>推定設定値 ${mean.toFixed(2)} / 設定4以上 ${(100*high).toFixed(1)}%</b></p>`+chart+ps.map(x=>`<div class="prob-row"><b>設定${x.setting}</b><div class="bar"><div class="fill" style="width:${(100*x.prob).toFixed(2)}%"></div></div><b>${(100*x.prob).toFixed(1)}%</b></div>`).join('')+`<p class="hint">方式：${result.mode==='bonus+medals'?'BB/RB＋条件付き差枚（正規近似）':'BB/RBのみ'}。${result.profile?'暫定小役モデル：'+esc(result.profile.version)+'　重複確率：'+(result.profile.verifiedOverlap?'一部反映':'未検証・非反映')+'　出典：'+esc(result.profile.source):''}　チェリー狙い割合：${cherryAimShare}% ／ 平均取得率：${(100*aimCapture()).toFixed(2)}%。等事前確率の相対推定であり実設定の保証ではありません。モデルの未検証部分があります。</p>`;
   msg('analysisMessage','分析しました');
  }catch(e){msg('analysisMessage',e.message,true);}
 };
