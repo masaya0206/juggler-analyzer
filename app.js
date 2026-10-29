@@ -340,6 +340,29 @@ function renderComparison(){
  }
  // Each x.expected is already Σ(setting × posterior probability); average across filtered records.
  // Summary follows the selected date, model, and ranking filter. Unestimated records are excluded.
+ // Observed aggregate coin return proxy. Keep records without measured medal difference
+ // out of both numerator and denominator. Avoid comparing mixed dates/stores.
+ const payoutNode=$('rankPayoutAudit');
+ if(payoutNode){
+  const dates=new Set(visible.map(x=>x.r.business_date));
+  const stores=new Set(visible.map(x=>x.r.store_name||''));
+  const eligible=visible.filter(x=>Number.isFinite(Number(x.r.games))&&Number(x.r.games)>0&&
+    x.r.diff_medals!==null&&x.r.diff_medals!==undefined&&Number.isFinite(Number(x.r.diff_medals)));
+  const gameSum=eligible.reduce((a,x)=>a+Number(x.r.games),0);
+  const diffSum=eligible.reduce((a,x)=>a+Number(x.r.diff_medals),0);
+  const count=eligible.length;
+  const coherent=dates.size===1 && stores.size===1 && count>0 && gameSum>0;
+  const val=(field,value)=>{const e=payoutNode.querySelector('[data-payout-'+field+']');if(e)e.textContent=value;};
+  const fmt=n=>Math.round(n).toLocaleString('ja-JP');
+  val('rate',coherent?(100+100*diffSum/(3*gameSum)).toFixed(2)+'%':'算出不可');
+  val('games',coherent?fmt(gameSum)+' G':'—');
+  val('medals',coherent?(diffSum>0?'+':'')+fmt(diffSum)+' 枚':'—');
+  val('per1000',coherent?(diffSum>0?'+':'')+(1000*diffSum/gameSum).toFixed(1)+' 枚 / 1000G':'—');
+  val('count',coherent?`差枚取得 ${count}台 / 表示 ${visible.length}台`:'同一店舗・同一営業日の台のみ集計可能');
+  val('note',coherent
+    ?`差枚未取得・0Gは除外（${visible.length-count}台）。3枚掛けを仮定した「100＋総差枚÷(3×総回転数)×100」の概算です。ボーナス中の回転数は分母に含まれないため、メーカー公表機械割と直接比較できません。設定推定確率は変更していません。`
+    :'営業日・店舗の混在、または取得済み差枚データがないため算出できません。日付・店舗を揃えてご覧ください。');
+ }
  const estimatedRows=visible.filter(x=>Number.isFinite(x.expected));
  const sum=estimatedRows.reduce((total,x)=>total+x.expected,0);
  const average=estimatedRows.length?sum/estimatedRows.length:null;
