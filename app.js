@@ -161,12 +161,33 @@ function plotAnalysis(r,result){
   paths+=`<polygon points="${poly}" fill="${colors[i]}" fill-opacity=".10"/><polyline points="${points.map(z=>`${z[0]},${z[1]}`).join(' ')}" fill="none" stroke="${colors[i]}" stroke-width="3"/>`;
  }
  if(D!==null&&D!==undefined)paths+=`<line x1="${X(0)}" y1="${Y(0)}" x2="${X(N)}" y2="${Y(D)}" stroke="#ef4444" stroke-width="4"/><circle cx="${X(N)}" cy="${Y(D)}" r="5" fill="#ef4444"/>`;
- let bands='';if(result.mode==='bonus+medals')for(const [i,e] of result.entries.entries()){
-  bands+=`<line x1="${X(N)-12+i*4}" x2="${X(N)-12+i*4}" y1="${Y(e.mu-1.96*e.sd)}" y2="${Y(e.mu+1.96*e.sd)}" stroke="${colors[i]}" stroke-width="4" opacity=".9"/>`;
- }
+ let bands=''; // Conditional intervals are displayed in the enlarged chart below.
+
  const ticks=Array.from({length:5},(_,i)=>ymin+(ymax-ymin)*i/4).map(v=>`<text x="${margin.left-8}" y="${Y(v)+4}" text-anchor="end" font-size="16" fill="currentColor">${Math.round(v).toLocaleString('ja-JP')}</text><line x1="${margin.left}" x2="${width-margin.right}" y1="${Y(v)}" y2="${Y(v)}" stroke="currentColor" stroke-opacity=".12"/>`).join('');
- return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="設定別理論差枚95%予測範囲と実測直線" style="width:100%;height:auto;max-width:100%;background:rgba(120,120,120,.04);border-radius:12px"><text x="${margin.left}" y="18" font-size="16" fill="currentColor">差枚（枚）</text>${ticks}<line x1="${margin.left}" x2="${width-margin.right}" y1="${Y(0)}" y2="${Y(0)}" stroke="currentColor" stroke-opacity=".4"/>${paths}${bands}<text x="${margin.left}" y="${height-18}" fill="currentColor" font-size="16">0</text><text x="${X(N)}" y="${height-18}" text-anchor="end" fill="currentColor" font-size="16">${N.toLocaleString('ja-JP')}G</text></svg><p class="hint">赤線：実測差枚を原点と結んだ補助線（途中経過ではありません）。色線・淡色帯：設定1〜6の理論平均と約95%範囲。右端の短い縦線：BB/RB固定時の予測範囲。順に設定1（灰）・2（青）・3（緑）・4（黄）・5（橙）・6（紫）。</p>`;
+ return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="設定別理論差枚95%予測範囲と実測直線" style="width:100%;height:auto;max-width:100%;background:rgba(120,120,120,.04);border-radius:12px"><text x="${margin.left}" y="18" font-size="16" fill="currentColor">差枚（枚）</text>${ticks}<line x1="${margin.left}" x2="${width-margin.right}" y1="${Y(0)}" y2="${Y(0)}" stroke="currentColor" stroke-opacity=".4"/>${paths}${bands}<text x="${margin.left}" y="${height-18}" fill="currentColor" font-size="16">0</text><text x="${X(N)}" y="${height-18}" text-anchor="end" fill="currentColor" font-size="16">${N.toLocaleString('ja-JP')}G</text></svg><p class="hint">赤線：実測差枚を原点と結んだ補助線（途中経過ではありません）。色線・淡色帯：設定1〜6の理論平均と約95%範囲。BB/RB固定時の予測範囲は下の専用拡大グラフに表示。順に設定1（灰）・2（青）・3（緑）・4（黄）・5（橙）・6（紫）。</p>${plotConditionalAnalysis(r,result)}`;
 }
+
+function plotConditionalAnalysis(r,result){
+ if(result.mode!=='bonus+medals'||r.diff_medals===null||r.diff_medals===undefined)return '';
+ const entries=result.entries.filter(e=>Number.isFinite(e.mu)&&Number.isFinite(e.sd));
+ if(!entries.length)return '';
+ const observed=Number(r.diff_medals);
+ const low=e=>e.mu-1.96*e.sd, high=e=>e.mu+1.96*e.sd;
+ const vals=[observed,...entries.flatMap(e=>[low(e),high(e)])];
+ const minimum=Math.min(...vals),maximum=Math.max(...vals);
+ const pad=Math.max(100,(maximum-minimum)*.11);
+ const lo=minimum-pad,hi=maximum+pad;
+ const width=960,height=460,ml=104,mr=34,mt=55,mb=56;
+ const X=v=>ml+(width-ml-mr)*(v-lo)/(hi-lo);
+ const colors=['#94a3b8','#60a5fa','#34d399','#eab308','#fb923c','#a78bfa'];
+ const grid=Array.from({length:5},(_,i)=>lo+(hi-lo)*i/4).map(v=>`<line x1="${X(v)}" y1="${mt-12}" x2="${X(v)}" y2="${height-mb}" stroke="currentColor" stroke-opacity=".10"/><text x="${X(v)}" y="${height-22}" text-anchor="middle" font-size="17" fill="currentColor">${Math.round(v).toLocaleString('ja-JP')}</text>`).join('');
+ const rows=entries.map((e,i)=>{
+  const y=mt+32+i*48;
+  return `<text x="${ml-20}" y="${y+5}" text-anchor="end" font-size="20" fill="currentColor">設定${e.setting}</text><line x1="${X(low(e))}" x2="${X(high(e))}" y1="${y}" y2="${y}" stroke="${colors[i]}" stroke-width="13" stroke-linecap="round" opacity=".83"/><line x1="${X(low(e))}" x2="${X(low(e))}" y1="${y-10}" y2="${y+10}" stroke="${colors[i]}" stroke-width="3"/><line x1="${X(high(e))}" x2="${X(high(e))}" y1="${y-10}" y2="${y+10}" stroke="${colors[i]}" stroke-width="3"/><circle cx="${X(e.mu)}" cy="${y}" r="7" fill="#ffffff" stroke="${colors[i]}" stroke-width="4"/>`;
+ }).join('');
+ return `<div style="margin-top:22px"><h4 style="margin:0 0 8px">BB・RB固定時の差枚予測（拡大）</h4><p class="hint">BB ${r.bb}回・RB ${r.rb}回で固定。横線は設定別の約95%予測区間、白丸は平均差枚、赤の縦破線は実測 ${observed>=0?'+':''}${observed.toLocaleString('ja-JP')}枚です。</p><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="BB・RB固定時の設定別差枚予測範囲と実測差枚の拡大比較" style="width:100%;height:auto;max-width:100%;background:rgba(120,120,120,.04);border-radius:12px"><text x="${ml}" y="29" font-size="19" fill="currentColor">差枚（枚）</text>${grid}${rows}<line x1="${X(observed)}" x2="${X(observed)}" y1="${mt-12}" y2="${height-mb}" stroke="#ef4444" stroke-width="4" stroke-dasharray="10 7"/><text x="${X(observed)}" y="${mt-17}" text-anchor="middle" fill="#ef4444" font-size="18">実測 ${observed>=0?'+':''}${observed.toLocaleString('ja-JP')}</text></svg><p class="hint">この図はメイン図の右端の縦線を独立して拡大したものです。推定設定の計算方法・確率は変更していません。</p></div>`;
+}
+
 function inferenceMetrics(r){const m=modelFor(r.machine_name);if(!m)return {model:null,high:null,expected:null,likely:null};try{const ps=infer(r,m);return {model:m,high:ps.filter(p=>Number(p.setting)>=4).reduce((v,p)=>v+p.prob,0),expected:ps.reduce((v,p)=>v+Number(p.setting)*p.prob,0),likely:ps.reduce((a,b)=>a.prob>=b.prob?a:b).setting};}catch{return {model:m,high:null,expected:null,likely:null};}}
 
 const config=window.APP_CONFIG||{};
