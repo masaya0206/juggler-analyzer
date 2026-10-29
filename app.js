@@ -276,11 +276,15 @@ $('saveRows').onclick=async()=>{
    if(error)throw Error(`${saved}件保存後、続きの登録に失敗: ${error.message}`);
    saved+=Math.min(100,rows.length-i);
   }
-  const {count,error:checkError}=await db.from('machine_records').select('id',{count:'exact',head:true}).eq('business_date',date).eq('store_name',store).eq('machine_name',machine);
+  const {count,error:checkError}=await db.from('machine_records').select('id',{count:'exact',head:true}).eq('business_date',date).eq('store_name',store).eq('machine_name',effectiveMachineName(machine));
   if(checkError)throw Error('保存要求は完了しましたが件数確認に失敗: '+checkError.message);
-  msg('importMessage',`${saved}件の保存要求が成功しました。${date}・${store}・${machine}の登録件数は${count}件です。既存の同一台番号は更新されます。`);
+  msg('importMessage',`${saved}台の解析・更新が完了しました。${date}・${store}・${machine}の登録件数は${count}件です。`);
   pending=[];
   await reload();
+  tab('comparison');
+  $('comparisonDate').value=date;
+  $('comparisonMachine').value=effectiveMachineName(machine);
+  renderComparison();
  }catch(e){msg('importMessage',e.message+'。登録済みの台がある可能性があります。同じデータで再試行できます。',true);}
  finally{$('saveRows').disabled=pending.length===0||pending.some(r=>!r.valid);}
 };
